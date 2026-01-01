@@ -1,0 +1,12 @@
+
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python
+numpy
+d3rlpy
+websocket-client
+matplotlib
+pybullet>=3.2.5
+fastapi
+uvicorn[standard]
+requests
