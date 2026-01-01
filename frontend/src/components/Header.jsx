@@ -1,8 +1,8 @@
 import React from 'react';
-import { Activity, Wifi, WifiOff, Disc, Square } from 'lucide-react';
+import { Activity, Wifi, WifiOff, Disc, Square, Home } from 'lucide-react';
 import clsx from 'clsx';
 
-const Header = ({ mode, connected, isRecording }) => {
+const Header = ({ mode, connected, isRecording, onHome }) => {
 
     const handleStop = async () => {
         try {
@@ -24,6 +24,11 @@ const Header = ({ mode, connected, isRecording }) => {
     return (
         <div className="fixed top-0 left-0 w-full h-12 flex items-center justify-between px-6 border-b border-gray-200 bg-white/90 z-10 backdrop-blur shadow-sm">
             <div className="flex items-center gap-3">
+                {onHome && (
+                    <button onClick={onHome} className="p-1 hover:bg-gray-100 rounded text-gray-600 mr-2" title="Home">
+                        <Home size={20} />
+                    </button>
+                )}
                 <Activity className="text-blue-600" />
                 <span className="font-bold tracking-widest text-lg text-gray-900">EMBRAINED <span className="text-blue-500">DASHBOARD</span></span>
             </div>

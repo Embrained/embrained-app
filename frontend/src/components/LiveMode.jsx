@@ -25,14 +25,9 @@ const LiveMode = ({ data, history, sendMessage, onExit }) => {
 
     return (
         <div className="flex flex-col min-h-screen w-full bg-gray-100 relative overflow-y-auto">
-            <button
-                onClick={onExit}
-                className="fixed top-4 left-4 z-50 bg-blue-500 text-white px-3 py-1 rounded shadow hover:bg-blue-400"
-            >
-                ← Home
-            </button>
 
-            <Header mode="LIVE" connected={true} isRecording={data.is_recording} />
+
+            <Header mode="LIVE" connected={true} isRecording={data.is_recording} onHome={onExit} />
 
             {/* Main Scrollable Content Area */}
             <div className="flex flex-col items-center w-full pt-20 pb-10">
