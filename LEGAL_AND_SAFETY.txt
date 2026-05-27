@@ -1,0 +1,161 @@
+========================================================================
+EMBRAINED, LLC — LEGAL AND SAFETY INFORMATION
+========================================================================
+
+This document accompanies the Embrained open-source software repository
+and is referenced by the LICENSE file. It contains two sections:
+
+  1. The Embrained Open-Weights End User License Agreement (EULA)
+  2. Physical Safety & Battery Handling Guidelines
+
+========================================================================
+SECTION 1: EMBRAINED OPEN-WEIGHTS END USER LICENSE AGREEMENT (EULA)
+========================================================================
+
+Effective Date: May 17, 2026
+
+This End User License Agreement ("EULA") is a legal agreement between
+you (either an individual or a single entity) and Embrained, LLC
+("Embrained") regarding the proprietary neural network model weights,
+parameters, and associated architectures provided by Embrained.
+
+1. Scope of the License
+
+This EULA governs the use of pre-trained neural network mathematical
+constants, floating-point parameter matrices (e.g., .safetensors, .bin,
+.pth files), VQ-VAE codebook boundaries, and federated policy
+checkpoints that are:
+
+  (a) Distributed directly by Embrained, LLC.
+  (b) Aggregated into the global "Model Soup" within the Embrained
+      ecosystem.
+
+Exemptions (User IP):
+This EULA does not apply to models trained completely from scratch
+(i.e., from random initialization) by a user exclusively on their own
+private data using the open-source Embrained software suite. Locally
+generated models trained in this manner are the exclusive intellectual
+property of the user and are not subject to the restrictions in this
+EULA.
+
+2. Permitted Use
+
+Subject to the terms and conditions of this EULA, Embrained grants you
+a non-exclusive, revocable, royalty-free license to download, run,
+evaluate, and fine-tune the distributed model weights locally for:
+
+  - Personal use and experimentation.
+  - Non-commercial and academic research objectives.
+
+3. Commercial Restrictions
+
+You may not use the model weights or any derivative works for any
+commercial purposes without an explicit, executed commercial licensing
+agreement with Embrained, LLC. Prohibited commercial activities include,
+but are not limited to:
+
+  - Commercial redistribution or sublicensing of the weights.
+  - Enterprise hosting, API provisioning, or cloud deployment of the
+    models as a service.
+  - Utilizing the weights to bootstrap, distill, or train competing
+    robotic navigation architectures or commercial foundation models.
+
+4. Derivative Works
+
+If you fine-tune, modify, adapt, distill, or otherwise alter the
+pre-trained model weights distributed by Embrained, the resulting model
+is legally considered a Derivative Work.
+
+The terms, conditions, and commercial restrictions of this EULA
+(including Section 3) apply entirely and strictly to any and all
+Derivative Works. While you retain ownership of the specific
+modifications you make, you may not commercially use, deploy, or
+distribute the Derivative Work without a commercial license from
+Embrained, LLC.
+
+5. Hardware Co-Dependency & Network Integrity
+
+The distributed models and visual perception manifolds are
+mathematically bound to the physical embodiment parameters of the Plexus
+robot. The redistribution or injection of uncalibrated,
+hardware-agnostic weight states that introduce adversarial noise or
+degrade the shared federated layer is a violation of the network's terms
+of service and may result in the revocation of this license.
+
+6. Termination
+
+This license is effective until terminated. Your rights under this EULA
+will terminate automatically without notice from Embrained if you fail
+to comply with any of its terms. Upon termination, you must cease all
+use of the model weights and destroy all copies, full or partial,
+including any Derivative Works.
+
+By downloading, accessing, or using the Embrained model weights, you
+agree to be bound by the terms of this EULA.
+
+
+========================================================================
+SECTION 2: PHYSICAL SAFETY & BATTERY HANDLING GUIDELINES
+========================================================================
+
+The Plexus robot platform involves electronics, motors, and lithium-ion
+batteries. All users MUST read and follow these safety guidelines before
+operating the hardware.
+
+1. Battery Policy ("BYOB" — Bring Your Own Batteries)
+
+To comply with shipping regulations, the Plexus Head and Chassis ship
+without batteries. Users assume responsibility for battery integration
+and must supply their own:
+
+  - 2x 18650 Lithium-Ion cells (recommended: Samsung 25R or LG HG2
+    high-discharge cells)
+  - A compatible 18650 charger with overcharge protection
+
+2. Polarity & Handling
+
+  - ALWAYS observe correct battery polarity when inserting cells.
+    Reversed polarity can cause permanent damage or fire.
+  - Never use damaged, dented, or re-wrapped cells.
+  - Do not short-circuit the battery terminals.
+  - Do not expose batteries to extreme heat or open flame.
+
+3. Hardware Safeguards
+
+The Plexus PCB includes secondary safety mechanisms:
+
+  - P-Channel MOSFET for reverse polarity protection
+  - PTC Polyfuse to prevent motor stall current from damaging the
+    logic board
+
+These are SECONDARY safeguards. The PRIMARY safety mechanism is strict
+user compliance with these handling instructions.
+
+4. Operating Environment
+
+  - Operate the robot on flat, indoor surfaces only.
+  - Do not operate near stairs, ledges, water, or pets without
+    supervision.
+  - The robot communicates over WiFi — ensure a stable local network
+    connection before enabling autonomous navigation.
+  - Never leave the robot running unattended during autonomous mode.
+
+5. Electrical Safety
+
+  - Do not modify the Plexus PCB unless you are qualified to work
+    with electronics.
+  - Disconnect batteries before performing any hardware maintenance.
+  - Use only the recommended power supply voltages specified in the
+    hardware documentation.
+
+
+========================================================================
+CONTACT INFORMATION
+========================================================================
+
+Embrained, LLC
+2222 W. Grand River Ave, Ste A
+Okemos, MI 48864
+
+For licensing inquiries: https://embrained.com
+Community: https://discord.com/channels/1487132795833684228/1487132796920004640

@@ -1,0 +1,21 @@
+{
+    "robot_type": "plexus_2wd",
+    "motor_driver": {
+        "type": "l9110s",
+        "pwm_frequency": 1000
+    },
+    "kinematics": {
+        "linear": {
+            "deadband_threshold": 0.4,
+            "max_safe_speed": 0.8,
+            "measured_max_m_s": 0.72,
+            "slew_limit": 2.0
+        },
+        "angular": {
+            "deadband_threshold": 0.4,
+            "max_safe_speed": 0.8,
+            "measured_max_rad_s": 10.83,
+            "slew_limit": 4.0
+        }
+    }
+}

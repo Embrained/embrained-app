@@ -1,0 +1,243 @@
+/*
+ * Embrained - Neural Navigation Software Suite
+ * Copyright (C) 2026 Embrained
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+@import "tailwindcss";
+
+@theme {
+  /* Override default Tailwind colors with Embrained custom palette */
+  --color-blue-400: #2563eb;
+  --color-blue-500: #2563eb;
+  --color-blue-600: #2563eb;
+
+  --color-indigo-400: #2563eb;
+  --color-indigo-500: #2563eb;
+  --color-indigo-600: #2563eb;
+
+  --color-purple-400: #7c3aed;
+  --color-purple-500: #7c3aed;
+  --color-purple-600: #7c3aed;
+
+  --color-green-400: #16a34a;
+  --color-green-500: #16a34a;
+  --color-green-600: #16a34a;
+
+  --color-yellow-400: #eab308;
+  --color-yellow-500: #eab308;
+  --color-yellow-600: #eab308;
+
+  --color-orange-400: #ea580c;
+  --color-orange-500: #ea580c;
+  --color-orange-600: #ea580c;
+
+  --color-red-400: #ea580c;
+  --color-red-500: #ea580c;
+  --color-red-600: #ea580c;
+
+  --color-slate-50: #ffffff;
+  --color-slate-100: #fafafa;
+}
+
+:root {
+  /* Embrained Palette */
+  --bg-color: #ffffff;
+  /* Pure White */
+  --text-primary: #0f172a;
+  /* Slate-900 */
+  --text-secondary: #334155;
+  /* Slate-700 */
+  --text-muted: #64748b;
+  /* Slate-500 */
+  --primary-blue: #2563eb;
+  /* Vibrant Blue */
+  --purple-ai: #7c3aed;
+  /* Vibrant Purple */
+  --cyan-data: #0891b2;
+  /* Cyan */
+  --accent-yellow: #eab308;
+  --accent-orange: #ea580c;
+  --accent-green: #16a34a;
+  --glass-bg: rgba(255, 255, 255, 0.9);
+  --glass-border: rgba(124, 58, 237, 0.15);
+
+  --font-main: 'Outfit', 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  font-family: var(--font-main);
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light;
+  color: var(--text-primary);
+  background-color: var(--bg-color);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--bg-color);
+  /* 5.3 Background Pattern: Biological circuit interface */
+  background-image:
+    radial-gradient(circle at 15% 50%, rgba(91, 33, 182, 0.05) 0%, transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(30, 64, 175, 0.05) 0%, transparent 25%),
+    linear-gradient(rgba(124, 58, 237, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 64, 175, 0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 50px 50px, 50px 50px;
+  background-attachment: fixed;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-main);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 0;
+}
+
+/* 5.2 H1: Extra bold (900), deep purple/blue gradient fill */
+h1 {
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--primary-blue), var(--purple-ai));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.1;
+}
+
+/* 5.2 H3: Uppercase, letter-spacing 1px, subtle bottom border */
+h3 {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 2px solid var(--glass-border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+/* Utilities */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+}
+
+/* ── Company Color Section Zones (matches website stripe pattern) ── */
+.zone-green {
+  background: rgba(22, 163, 74, 0.05) !important;
+  border-color: rgba(22, 163, 74, 0.18) !important;
+}
+.zone-purple {
+  background: rgba(126, 34, 206, 0.05) !important;
+  border-color: rgba(126, 34, 206, 0.18) !important;
+}
+.zone-blue {
+  background: rgba(37, 99, 235, 0.05) !important;
+  border-color: rgba(37, 99, 235, 0.18) !important;
+}
+.zone-yellow {
+  background: rgba(202, 138, 4, 0.05) !important;
+  border-color: rgba(202, 138, 4, 0.18) !important;
+}
+.zone-orange {
+  background: rgba(234, 88, 12, 0.05) !important;
+  border-color: rgba(234, 88, 12, 0.18) !important;
+}
+
+/* Accent strip on panel headers — 4px left border in company color */
+.accent-green  { border-left: 4px solid rgba(22, 163, 74, 0.5); padding-left: 0.75rem; }
+.accent-purple { border-left: 4px solid rgba(126, 34, 206, 0.5); padding-left: 0.75rem; }
+.accent-blue   { border-left: 4px solid rgba(37, 99, 235, 0.5); padding-left: 0.75rem; }
+.accent-yellow { border-left: 4px solid rgba(202, 138, 4, 0.5); padding-left: 0.75rem; }
+.accent-orange { border-left: 4px solid rgba(234, 88, 12, 0.5); padding-left: 0.75rem; }
+
+/* 5.3 Tags */
+.tag {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  background: rgba(30, 64, 175, 0.05);
+  /* Very faint blue */
+  color: var(--primary-blue);
+  border: 1px solid rgba(30, 64, 175, 0.2);
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* 5.4 "Minds Pulse" Animation */
+@keyframes pulse-intelligence {
+  0% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+
+  50% {
+    opacity: 1;
+    /* Keep opaque */
+    filter: brightness(0);
+    /* Absolute Black */
+  }
+
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.animate-pulse-intelligence {
+  animation: pulse-intelligence 3s infinite ease-in-out;
+}
+
+/* 1Hz LED Pulse (500ms ON / 500ms OFF) */
+@keyframes pulse-led {
+
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0.1;
+  }
+}
+
+.animate-pulse-led {
+  animation: pulse-led 1s infinite step-end;
+}

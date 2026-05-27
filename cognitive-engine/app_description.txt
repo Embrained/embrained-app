@@ -1,0 +1,26 @@
+EMBRAINED APP SYSTEM DESCRIPTION
+
+1. OVERVIEW
+The Embrained App is a specialized robotic control and telepresence platform designed for low-latency interaction and autonomous navigation. It provides a real-time bridge between a web-based interface and robotic hardware, enabling manual control, autonomous exploration, and high-fidelity data logging for machine learning purposes.
+
+2. SYSTEM COMPONENTS
+The application is structured into three primary layers. First, the Frontend is a modern web application built with React and Vite, providing the user interface for video streams, telemetry, and control parameters. Second, the Backend is a Python-based engine using FastAPI and Uvicorn. This layer manages the logic for vision processing, autonomous controllers, and the Nervous System that handles robot connectivity. Third, the Firmware runs on the robotic peripheral, typically a Seeed Studio XIAO ESP32S3, which controls the physical actuators and sensors.
+
+3. LIVE MODE COMMUNICATION
+Interaction during Live mode relies on two distinct communication channels established between the host computer and the robot.
+1. The Command Channel uses a WebSocket protocol on port 80. This channel transmits low-latency motor commands, sound triggers, and LED states from the app to the robot. Simultaneously, it carries sensor telemetry back to the app at a rate of 10 to 20 updates per second.
+2. The Video Channel uses an HTTP MJPEG stream on port 81. The robot acts as a server, capturing frames from its onboard camera and transmitting them as a continuous stream of JPEG images which the app decodes and displays in the cockpit.
+
+4. MOTOR CONTROL AND NAVIGATION
+The app supports two primary modes of locomotion.
+1. Manual Telepresence allows the user to drive the robot using keyboard controls. The app translates key presses into raw PWM values. For example, pressing the forward key sends commands that immediately jump to 105 PWM to overcome motor stall thresholds.
+2. Autonomy Controllers like Ike, Meg, and Lucy implement higher-level behaviors. Ike uses random speed selection and obstacle recovery routines. Meg and Lucy use simple distance-based triggers to stop or reverse when approaching objects. All decisions are calculated in the Python backend and sent as finalized motor values to the firmware.
+
+5. FIRMWARE INTERACTION LOGIC
+The firmware is designed for robustness and safety.
+1. It parses string-based commands using simple prefixes. The letter L followed by a value sets the left motor, R sets the right motor, and S triggers the onboard buzzer.
+2. A safety heartbeat timer is implemented on the chip. If the robot does not receive a command for more than 1000 milliseconds, it automatically stops all motors to prevent runaway conditions in case of a network failure.
+3. Visual feedback is provided through a 1Hz pulse on the status LEDs. The electronics remain solid during a WiFi connection and begin pulsing only when an active data stream or control link is established with the app.
+
+6. DATA ACQUISITION
+While operating, the app can record synchronized datasets. It captures the camera frames alongside the exact motor commands and sensor readings sent and received at each timestamp. This data is stored in a discrete Markov decision process format, allowing users to train neural policies based on the robot's real-world experiences.
