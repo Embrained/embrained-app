@@ -64,6 +64,15 @@ start.bat
 
 Open your default web browser and navigate to `http://localhost:8080`. You are now ready to use the Embrained App for data collection, live telemetry viewing, and autonomy execution.
 
+**Optional — Simulation Dependencies:**
+
+If you want to use the PyBullet physics simulator, install the additional simulation requirements (requires a C/C++ compiler such as [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) on Windows):
+
+```bash
+pip install -r requirements-simulation.txt
+
+```
+
 ### 3. The CLI Training Pipeline
 
 Once you have gathered sufficient raw transition data using teleoperation (saved automatically to the `/data` folder), use the command-line interface to train your model architecture. Ensure you have activated your virtual environment before executing these commands:

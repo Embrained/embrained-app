@@ -18,7 +18,7 @@
 import os
 
 # --- NETWORK ---
-ROBOT_IP = "10.0.0.26"
+ROBOT_IP = "192.168.4.1"
 # UDP_PORT = 3000 # DEPRECATED: Switching to Legacy WS/HTTP
 WS_URL = f"ws://{ROBOT_IP}/ws"
 STREAM_URL = f"http://{ROBOT_IP}:81/stream"

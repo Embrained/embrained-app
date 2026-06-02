@@ -41,7 +41,10 @@ except ImportError:
 
 from backend.controllers.dreamer_controller import DreamerController
 # Game Modules
-from game.referee import MotionReferee
+try:
+    from game.referee import MotionReferee
+except ImportError:
+    MotionReferee = None
 
 # Configuration
 from config import CONTROL_FREQ, GOAL_LED_COLORS, DATA_DIR, MODELS_DIR, GOAL_DIR, ACTION_NAMES, ACTION_PWM_MAP, COLOR_NAME_MAP, STOP_DISTANCE_THRESHOLD, RECORD_W, RECORD_H
@@ -155,9 +158,10 @@ class CognitiveEngine:
             logging.debug("Initializing VLAController...")
             self.vla = VLAController(self.policy_server)
             logging.debug("VLAController Initialized.")
-            logging.debug("Initializing MotionReferee...")
-            self.referee = MotionReferee() 
-            logging.debug("MotionReferee Initialized.") 
+            if MotionReferee:
+                logging.debug("Initializing MotionReferee...")
+                self.referee = MotionReferee() 
+                logging.debug("MotionReferee Initialized.") 
                 
         except Exception as e:
             logging.critical(f"Engine Init Failed: {e}")
@@ -885,6 +889,13 @@ class CognitiveEngine:
         try:
             # Check if the 'Markov' or 'MarkovWASD' controller is currently active
             is_markov = (self.explorer and self.explorer.current_algo in ["Markov", "MarkovWASD"])
+            
+            # If no exploration algorithm is active, auto-activate Markov so the
+            # SMDP state machine generates bout transitions for image logging.
+            if self.explorer and not self.explorer.current_algo and not self.active_model_name:
+                logging.info("No controller active — auto-activating Markov for recording.")
+                self.explorer.set_algorithm("Markov")
+                is_markov = True
             
             from backend.services.markov_logger import MarkovLogger
             ctrl_name = self.explorer.current_algo if self.explorer and self.explorer.current_algo else "none"

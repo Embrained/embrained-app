@@ -467,17 +467,17 @@ class NervousSystem:
                  time.sleep(1.0)
 
     def _fetch_mjpeg_frames(self):
-        """Robust MJPEG reader using requests. Optimized for unstable WiFi and non-standard boundaries."""
+        """Robust MJPEG reader using requests. Parses raw JPEG markers from multipart stream."""
         logging.info(f"Connecting to Stream (Requests): {self.video_source} ...")
         frame_count = 0
         try:
-            with requests.get(self.video_source, stream=True, timeout=5) as r:
+            with requests.get(self.video_source, stream=True, timeout=(5, 15)) as r:
                 if r.status_code != 200:
                     logging.error(f"Stream Status Error: {r.status_code}")
                     return
 
                 bytes_buffer = bytes()
-                for chunk in r.iter_content(chunk_size=16384): # Larger chunks for efficiency
+                for chunk in r.iter_content(chunk_size=16384):
                     if not self.running: break
                     bytes_buffer += chunk
                     
@@ -487,8 +487,6 @@ class NervousSystem:
                         
                         if a != -1 and b != -1:
                             if a > b:
-                                # Found end of previous frame and start of next
-                                # Only keep from 'a' onwards
                                 bytes_buffer = bytes_buffer[a:]
                                 continue
 
@@ -506,11 +504,10 @@ class NervousSystem:
                             except Exception as decode_err:
                                 logging.debug(f"Frame Decode Error: {decode_err}")
                         else:
-                            # Need more data
                             break
                     
-                    # Prevent buffer from growing indefinitely if markers never found
-                    if len(bytes_buffer) > 1024 * 1024: # 1MB safety limit
+                    # Safety: prevent unbounded buffer growth
+                    if len(bytes_buffer) > 1024 * 1024:
                          bytes_buffer = bytes_buffer[-1024:] 
                          
         except Exception as e:

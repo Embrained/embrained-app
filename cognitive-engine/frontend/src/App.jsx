@@ -24,9 +24,10 @@ function App() {
   // Determine WS URL (use window.location to support running on other devices)
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  // backend port is 8000. If we are serving via python, python serves frontend on 8000 too.
-  // If dev mode (vite), frontend is 5173, backend is 8000.
-  const wsUrl = `${protocol}//${host}:8000/ws`;
+  // Use the same port the page was served from (production).
+  // In dev mode (Vite on 5173), fall back to the backend default port 8080.
+  const port = window.location.port === '5173' ? '8080' : window.location.port;
+  const wsUrl = `${protocol}//${host}:${port}/ws`;
 
   const { data, history, connected, sendMessage } = useRobotConnection(wsUrl);
 

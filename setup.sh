@@ -25,6 +25,10 @@ echo ""
 echo "Installing Python dependencies..."
 python3 -m pip install --upgrade pip
 pip install -r requirements.txt
+if [ $? -ne 0 ]; then
+    echo "[ERROR] Python dependency installation failed. Please check the error messages above."
+    exit 1
+fi
 
 echo ""
 echo "Setting up Node.js frontend..."

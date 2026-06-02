@@ -181,7 +181,7 @@ if __name__ == "__main__":
     parser.add_argument("--webcam", action="store_true", help="Record external webcam if used with Plexus")
     parser.add_argument("--continuous", action="store_true", help="Launch the Action Chunking (Continuous) engine instead of discrete Markov.")
     parser.add_argument("--suffix", type=str, default="markov", help="Prefix for new recording folders")
-    parser.add_argument("--ip", type=str, default="10.0.0.11", help="Robot IP Address")
+    parser.add_argument("--ip", type=str, default="192.168.4.1", help="Robot IP Address")
     
     parser.add_argument("--port", type=int, default=8080, help="API Server Port")
     
