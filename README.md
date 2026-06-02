@@ -64,6 +64,15 @@ start.bat
 
 Open your default web browser and navigate to `http://localhost:8080`. You are now ready to use the Embrained App for data collection, live telemetry viewing, and autonomy execution.
 
+**GPU Users — CUDA Support:**
+
+The default setup installs a CPU-only build of PyTorch, which is sufficient for teleoperation and data collection. If you have an NVIDIA GPU with CUDA support and want faster training, reinstall PyTorch with CUDA:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+```
+
 **Optional — Simulation Dependencies:**
 
 If you want to use the PyBullet physics simulator, install the additional simulation requirements (requires a C/C++ compiler such as [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) on Windows):
