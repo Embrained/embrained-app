@@ -98,6 +98,7 @@ class ContinuousCognitiveEngine:
         self.recording = False
         self.current_sound_cmd = "s:0;" 
         self.logger = None 
+        self.action_history = []  # Rolling buffer for continuous action logging
 
         # State Tracking 
         self.last_led_color = (0, 0, 0)
@@ -894,9 +895,9 @@ class ContinuousCognitiveEngine:
             # If no exploration algorithm is active, auto-activate Markov so the
             # SMDP state machine generates bout transitions for image logging.
             if self.explorer and not self.explorer.current_algo and not self.active_model_name:
-                logging.info("No controller active — auto-activating Markov for recording.")
-                self.explorer.set_algorithm("Markov")
-                is_markov = True
+                logging.info("No controller active — auto-activating ContinuousSweep for recording.")
+                self.explorer.set_algorithm("ContinuousSweep")
+                is_markov = False
             
             from backend.services.continuous_logger import ContinuousLogger
             ctrl_name = self.explorer.current_algo if self.explorer and self.explorer.current_algo else "none"
@@ -907,6 +908,7 @@ class ContinuousCognitiveEngine:
                 
             self.logger = ContinuousLogger(controller_name=ctrl_name, prefix=self.rec_prefix)
                 
+            self.action_history = []  # Reset action history for fresh session
             self.recording = True
             with self.state_lock:
                 self.state['is_recording'] = True
@@ -916,6 +918,7 @@ class ContinuousCognitiveEngine:
     def stop_recording(self):
         if not self.recording: return
         self.recording = False
+        self.action_history = []  # Clear action history on stop
         with self.state_lock:
             self.state['is_recording'] = False
             self.state['recording_frames'] = 0
@@ -1500,10 +1503,16 @@ class ContinuousCognitiveEngine:
             
              if self.recording and self.logger:
                  from backend.services.continuous_logger import ContinuousLogger
+                 from backend.services.markov_logger import MarkovLogger
+                 
+                 # Track action history for continuous logging
+                 self.action_history.append((int(effective_action[0]), int(effective_action[1])))
+                 if len(self.action_history) > 10:
+                     self.action_history = self.action_history[-10:]
+                 
                  if isinstance(self.logger, MarkovLogger):
-                     # [NEW] SMDP Snapshot Logic for MarkovLogger                     # Standard execution triggers discrete logging snapshots
-                     # IMPORTANT: motor_cmd_str might be stale or generated before comms responds.
-                     # Generate an explicit string from effective_action to ensure correct logging.
+                     # SMDP Snapshot Logic for MarkovLogger
+                     # Standard execution triggers discrete logging snapshots
                      if kwargs.get('is_bout_start', False):
                          explicit_cmd_str = f"l:{int(effective_action[0])};r:{int(effective_action[1])};"
                          
@@ -1520,9 +1529,24 @@ class ContinuousCognitiveEngine:
                              active_controller=kwargs.get('active_controller_str', 'unknown'),
                              webcam_frame=webcam_frame
                          )
-                         
+                 elif isinstance(self.logger, ContinuousLogger):
+                     # Continuous Action Chunking: log every frame with action history
+                     webcam_frame = None
+                     if self.use_webcam and self.comms and hasattr(self.comms, 'get_latest_webcam_frame'):
+                         webcam_frame = self.comms.get_latest_webcam_frame()
+                     
+                     self.logger.log_frame(
+                         frame=img,
+                         ir_raw=self.comms.telemetry.get('dist', '0') if (self.comms and hasattr(self.comms, 'telemetry')) else '0',
+                         batt_raw=self.comms.telemetry.get('batt', '0') if (self.comms and hasattr(self.comms, 'telemetry')) else '0',
+                         ping_raw=self.comms.telemetry.get('ping', '0') if (self.comms and hasattr(self.comms, 'telemetry')) else '0',
+                         executing_action_history=list(self.action_history),
+                         future_chunk=[],
+                         active_controller=kwargs.get('active_controller_str', 'unknown'),
+                         webcam_frame=webcam_frame
+                     )
 
-                     self.state['recording_frames'] = self.logger.frame_count
+                 self.state['recording_frames'] = self.logger.frame_count
              else:
                  self.state['recording_frames'] = 0
                  
