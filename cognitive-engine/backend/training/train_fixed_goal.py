@@ -16,13 +16,13 @@ import torchvision.transforms as T
 from torch.utils.data import Dataset, DataLoader
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from config import ACTION_PWM_MAP, MODELS_DIR
+from config import ACTION_PWM_MAP, MODELS_DIR, DATA_DIR
 from modules.spatial_model import TinyVAE
 
 T_HORIZON = 5 # Number of steps preceding the goal image to count as "successful trajectory"
 
 TARGET_IMAGES = []
-goals_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'goals')
+goals_dir = os.path.join(DATA_DIR, 'goals')
 if os.path.exists(goals_dir):
     for f in os.listdir(goals_dir):
         if f.lower().endswith(('.jpg', '.jpeg', '.png')):

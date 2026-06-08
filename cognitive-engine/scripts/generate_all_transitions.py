@@ -21,10 +21,10 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from backend.services.datasets import DatasetService
+from config import DATA_DIR
 
 def generate_transitions():
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    data_dir = os.path.join(base_dir, 'data')
+    data_dir = DATA_DIR
     outputs_path = os.path.join(data_dir, 'all_transitions.json')
     
     dirs = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d)) and 'markov_' in d]
