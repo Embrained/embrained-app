@@ -75,12 +75,12 @@ Embrained, LLC.
 
 5. Hardware Co-Dependency & Network Integrity
 
-The distributed models and visual perception manifolds are
-mathematically bound to the physical embodiment parameters of the Plexus
-robot. The redistribution or injection of uncalibrated,
-hardware-agnostic weight states that introduce adversarial noise or
-degrade the shared federated layer is a violation of the network's terms
-of service and may result in the revocation of this license.
+The pre-trained neural models and visual perception manifolds distributed
+by Embrained are structurally optimized for the physical embodiment parameters
+of the Plexus robot. Users are fully permitted and encouraged to run, modify,
+and experiment with any custom or hardware-agnostic models they wish on the
+Plexus platform. However, the pre-trained models provided directly by Embrained
+remain subject to the non-commercial restrictions outlined in Section 3.
 
 6. Termination
 
@@ -154,8 +154,7 @@ CONTACT INFORMATION
 ========================================================================
 
 Embrained, LLC
-2222 W. Grand River Ave, Ste A
-Okemos, MI 48864
+Contact (IRO / Legal): chris@embrained.ai
 
 For licensing inquiries: https://embrained.com
 Community: https://discord.com/channels/1487132795833684228/1487132796920004640

@@ -16,6 +16,11 @@
 
 import sys
 import os
+
+# Prevent 20-30s timeout delays when connected to the offline Plexus robot WiFi
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["WANDB_MODE"] = "offline"
+
 import argparse
 import asyncio
 import logging
