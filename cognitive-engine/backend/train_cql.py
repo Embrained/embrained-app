@@ -1336,3 +1336,30 @@ def evaluate_policy(q_net, dataset, trajectories, device, num_samples=500):
     return cm_path
 
 
+if __name__ == "__main__":
+    import argparse
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from config import DATA_DIR
+
+    parser = argparse.ArgumentParser(description="Train Goal-Conditioned CQL Navigation Policy")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
+    parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--alpha", type=float, default=0.2, help="CQL alpha (conservatism weight)")
+    parser.add_argument("--model_size", type=str, default="large", help="Network size (small/large)")
+    parser.add_argument("--dataset_percent", type=int, default=100, help="Percentage of dataset to use")
+    parser.add_argument("--goal_type", type=str, default="her", help="Goal type (her, group_goal, discrete_exact, dark_wall_seek)")
+    parser.add_argument("--vae_model", type=str, default=None, help="VAE model filename (auto-detected if omitted)")
+    args = parser.parse_args()
+
+    train(
+        data_root=DATA_DIR,
+        num_epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.lr,
+        alpha=args.alpha,
+        model_size=args.model_size,
+        dataset_percent=args.dataset_percent,
+        goal_type=args.goal_type,
+        vae_model_filename=args.vae_model,
+    )
