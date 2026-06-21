@@ -8,12 +8,18 @@ Embrained offloads all heavy compute from the robot to your local GPU over WiFi.
 
 ### 1. Install
 
+**Step 1.** Install [Node.js](https://nodejs.org/) (required for the frontend dashboard).
+
+**Step 2.** Clone the repository:
+
 ```bash
 git clone https://github.com/Embrained/embrained-app.git
 cd embrained-app
 ```
 
-Install [Node.js](https://nodejs.org/), then run **Windows:** `setup.bat` · **Mac/Linux:** `./setup.sh` to create an isolated virtual environment with Python 3.12, PyTorch, and other dependencies.
+**Step 3.** Run the setup script to create an isolated virtual environment with Python 3.12, PyTorch, and other dependencies:
+
+**Windows:** `setup.bat` · **Mac/Linux:** `./setup.sh`
 
 ### 2. Launch
 
