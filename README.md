@@ -13,9 +13,7 @@ git clone https://github.com/Embrained/embrained-app.git
 cd embrained-app
 ```
 
-**Windows:** `setup.bat` · **Mac/Linux:** `./setup.sh`
-
-This creates an isolated virtual environment with Python 3.12, PyTorch, and Node.js.
+Install [Node.js](https://nodejs.org/), then run **Windows:** `setup.bat` · **Mac/Linux:** `./setup.sh` to create an isolated virtual environment with Python 3.12, PyTorch, and other dependencies.
 
 ### 2. Launch
 
