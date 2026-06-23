@@ -17,28 +17,33 @@ git clone https://github.com/Embrained/embrained-app.git
 cd embrained-app
 ```
 
-**Step 3.** Run the setup script to create an isolated virtual environment with Python 3.12, PyTorch, and other dependencies:
+### 2. Connect to Robot
 
-**Windows:** `setup.bat` · **Mac/Linux:** `./setup.sh`
+1. Power on your Plexus robot. 
+2. Wait for the tally light to blink at 1 Hz, indicating it is ready to connect.
+3. Connect your computer to the robot's WiFi access point (SSID typically looks like `Plexus_XXXX`).
+4. The tally light will change to steady ON when your computer has successfully connected to the robot.
 
-### 2. Launch
+### 3. Launch
 
-**Windows:** `start.bat` · **Mac/Linux:** `./start.sh`
+Run the setup script to create an isolated virtual environment with Python 3.12, PyTorch, and other dependencies, then launch the app:
+
+- **Windows:** run `setup.bat`, then run `start.bat`
+- **Mac/Linux:** run `./setup.sh`, then run `./start.sh`
 
 Open [http://localhost:8080](http://localhost:8080) to access the dashboard for teleoperation, live telemetry, and autonomy control.
 
-### 3. Collect Data
+### 4. Collect Data
 
 Use the dashboard to drive the robot and record training data:
 
-1. Open [http://localhost:8080](http://localhost:8080) and connect to your robot.
-2. Drive the robot around using **manual control** (keyboard/gamepad) or start an **autonomous controller** to explore automatically.
-3. Press the **REC** button to begin recording. The robot saves camera frames, motor commands, and sensor readings as it moves.
-4. Press **REC** again to stop. Each recording session is saved to `data/markov_<timestamp>/` inside the project directory.
+1. Drive the robot around using **manual control** (keyboard/gamepad) or start an **autonomous controller** to explore automatically.
+2. Press the **REC** button to begin recording. The robot saves camera frames, motor commands, and sensor readings as it moves.
+3. Press **REC** again to stop. Each recording session is saved to `data/markov_<timestamp>/` inside the project directory.
 
 Record several sessions covering your environment from different starting positions. More diverse data → better navigation.
 
-### 4. Train
+### 5. Train
 
 Activate your virtual environment first (`venv\Scripts\activate.bat` on Windows, `source venv/bin/activate` on Mac/Linux), then run from the project root.
 
@@ -99,7 +104,7 @@ python cognitive-engine/backend/train_cql.py
 
 This uses [Hindsight Experience Replay (HER)](https://arxiv.org/abs/1707.01495) to relabel every trajectory with multiple future frames as goals, producing a policy that generalizes across all locations in your environment. At inference time, click any point in the **Latent Space** panel to set the goal — the robot will navigate there autonomously.
 
-### 5. Deploy
+### 6. Deploy
 
 1. Power on your Plexus robot and verify its WiFi connection in the app.
 2. Open the **Autonomy Panel**, select your trained models, and click **Start Autonomy**.

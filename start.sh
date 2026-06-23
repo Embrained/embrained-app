@@ -29,4 +29,4 @@ echo "Server starting on port 8080..."
 echo "Please navigate to http://localhost:8080 in your default web browser."
 echo ""
 
-python3 cognitive-engine/app.py --port 8080 $ENGINE_FLAG
+python3 cognitive-engine/app.py --port 8080 --plexus $ENGINE_FLAG
