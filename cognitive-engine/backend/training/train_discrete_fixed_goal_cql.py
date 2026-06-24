@@ -72,8 +72,8 @@ def main():
             if os.path.exists(img_path):
                 img = Image.open(img_path).convert('RGB')
                 t_img = transform(img).unsqueeze(0).to(device)
-                # Discrete VAE output: recon, quantized, vq_loss, perplexity
-                _, quantized, _, _ = vae(t_img)
+                # Discrete VAE output: recon, z_e, quantized, vq_loss, perplexity
+                _, z_e, quantized, _, _ = vae(t_img)
                 target_latents.append(quantized.cpu().squeeze())
             else:
                 print(f"WARNING: Target image not found: {img_path}")

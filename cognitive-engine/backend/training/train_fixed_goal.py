@@ -189,11 +189,11 @@ def train(data_root="data", epochs=50, batch_size=32, lr=1e-3):
     # Dynamically find the latest VAE model
     import glob
     print("Searching for latest VAE checkpoint in data directory...")
-    vae_candidates = glob.glob(os.path.join(DATA_ROOT, '*-vae_*.pth'))
+    vae_candidates = glob.glob(os.path.join(DATA_ROOT, '*vae_*.pth'))
     # Filter out generated policy files that accidentally match the prefix
     vae_candidates = [f for f in vae_candidates if not any(x in f.lower() for x in ['hello_world', 'cql', 'reflex', 'fixed_goal', 'policy'])]
     if not vae_candidates:
-        print("Error: No VAE found matching pattern '*-vae_*.pth'!")
+        print("Error: No VAE found matching pattern '*vae_*.pth'!")
         return
         
     vae_candidates.sort(key=os.path.getmtime, reverse=True)
@@ -204,7 +204,18 @@ def train(data_root="data", epochs=50, batch_size=32, lr=1e-3):
     try:
         vae_state = torch.load(VAE_PATH, map_location=device, weights_only=True)
         latent_dim, model_size, img_dim, in_channels = TinyVAE.detect_size(vae_state)
-        vae = TinyVAE(latent_dim=latent_dim, model_size=model_size, input_spatial_dim=img_dim, in_channels=in_channels).to(device)
+        
+        # Detect Discrete architecture
+        vq_key = "vq.embedding.weight" if "vq.embedding.weight" in vae_state else "vq._embedding.weight" if "vq._embedding.weight" in vae_state else None
+        if vq_key:
+            from modules.spatial_model import DiscreteVQVAE
+            num_embeddings = vae_state[vq_key].shape[0]
+            vae = DiscreteVQVAE(latent_dim=latent_dim, model_size=model_size, input_spatial_dim=img_dim, in_channels=in_channels, num_embeddings=num_embeddings).to(device)
+            is_discrete = True
+        else:
+            vae = TinyVAE(latent_dim=latent_dim, model_size=model_size, input_spatial_dim=img_dim, in_channels=in_channels).to(device)
+            is_discrete = False
+            
         vae.load_state_dict(vae_state)
         vae.eval()
         print("-> VAE loaded successfully!")
@@ -242,7 +253,10 @@ def train(data_root="data", epochs=50, batch_size=32, lr=1e-3):
                 if os.path.exists(img_path):
                     img = Image.open(img_path).convert('RGB')
                     t_img = transform(img).unsqueeze(0).to(device)
-                    _, mu, _ = vae(t_img)
+                    if is_discrete:
+                        _, mu, _, _, _ = vae(t_img)
+                    else:
+                        _, mu, _ = vae(t_img)
                     target_latents.append(mu.cpu().squeeze())
                     latent_dict[target] = mu.cpu().squeeze()
                 else:
@@ -270,7 +284,10 @@ def train(data_root="data", epochs=50, batch_size=32, lr=1e-3):
                     img = Image.open(img_path).convert('RGB')
                     t_img = transform(img).unsqueeze(0).to(device)
                     with torch.no_grad():
-                        _, mu, _ = vae(t_img)
+                        if is_discrete:
+                            _, mu, _, _, _ = vae(t_img)
+                        else:
+                            _, mu, _ = vae(t_img)
                     latent_dict[p] = mu.cpu().squeeze()
             
             if p in latent_dict:

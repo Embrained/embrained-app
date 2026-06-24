@@ -254,11 +254,14 @@ class DatasetService:
                  cql_files.extend(glob.glob(os.path.join(d, "*", "*_policy.pth")))
                  cql_files.extend(glob.glob(os.path.join(d, "*fixed_goal*.pth")))
                  cql_files.extend(glob.glob(os.path.join(d, "*hello_world*.pth")))
+                 cql_files.extend(glob.glob(os.path.join(d, "*e2e*.pth")))
+                 cql_files.extend(glob.glob(os.path.join(d, "*", "*e2e*.pth")))
             else:
                  cql_files.extend(glob.glob(os.path.join(d, "**", "*cql*.pth"), recursive=True))
                  cql_files.extend(glob.glob(os.path.join(d, "**", "*_policy.pth"), recursive=True))
                  cql_files.extend(glob.glob(os.path.join(d, "**", "*fixed_goal*.pth"), recursive=True))
                  cql_files.extend(glob.glob(os.path.join(d, "**", "*hello_world*.pth"), recursive=True))
+                 cql_files.extend(glob.glob(os.path.join(d, "**", "*e2e*.pth"), recursive=True))
 
         # 2. VAEs
         vae_files = []

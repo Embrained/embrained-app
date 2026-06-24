@@ -239,28 +239,43 @@ class Planner:
                     loaded_ok = True
                 except Exception as e:
                     logging.error(f"Failed to load FixedGoalBCNetwork: {e}")
-            
+            elif "e2e" in os.path.basename(model_path):
+                try:
+                    from modules.spatial_model import E2EBCNetwork
+                    test_policy = E2EBCNetwork(num_classes=6)
+                    test_policy.to(self.device)
+                    test_policy.load_state_dict(state_dict, strict=False)
+                    loaded_policy = test_policy
+                    self.model_name = os.path.basename(model_path)
+                    logging.info(f"Successfully loaded E2EBCNetwork from {model_path}")
+                    loaded_ok = True
+                except Exception as e:
+                    logging.error(f"Failed to load E2EBCNetwork: {e}")
+                    
             if not loaded_ok:
+                try:
+                    extracted_inp_dim = state_dict['input_layer.weight'].shape[1]
+                except Exception:
+                    extracted_inp_dim = 128 if is_discrete else 32
+                    
                 for size in possible_sizes:
-                    for inp_dim in possible_input_dims:
-                        try:
-                            # Try instantiating this size
-                            from config import ACTION_DIM
-                            test_policy = CQLNetwork(input_dim=inp_dim, hidden_dim=HIDDEN_DIM, action_dim=ACTION_DIM, use_ln=not is_discrete, model_size=size)
-                            test_policy.to(self.device)
-                            
-                            test_policy.load_state_dict(state_dict, strict=True)
-                            
-                            # If success:
-                            loaded_policy = test_policy
-                            self.model_name = os.path.basename(model_path)
-                            logging.info(f"Successfully loaded {size.upper()} CQL Policy (Input={inp_dim}, Actions={ACTION_DIM}) from {model_path}")
-                            loaded_ok = True
-                            break
-                            
-                        except RuntimeError as e:
-                             pass
-                    if loaded_ok: break
+                    try:
+                        # Try instantiating this size
+                        from config import ACTION_DIM
+                        test_policy = CQLNetwork(input_dim=extracted_inp_dim, hidden_dim=HIDDEN_DIM, action_dim=ACTION_DIM, use_ln=not is_discrete, model_size=size)
+                        test_policy.to(self.device)
+                        
+                        test_policy.load_state_dict(state_dict, strict=True)
+                        
+                        # If success:
+                        loaded_policy = test_policy
+                        self.model_name = os.path.basename(model_path)
+                        logging.info(f"Successfully loaded {size.upper()} CQL Policy (Input={extracted_inp_dim}, Actions={ACTION_DIM}) from {model_path}")
+                        loaded_ok = True
+                        break
+                        
+                    except RuntimeError as e:
+                        logging.error(f"Size {size} failed: {e}")
             
             if loaded_ok:
                 self.policy = loaded_policy
@@ -362,27 +377,31 @@ class Planner:
                              logging.error(f"Failed to load OracleQNetwork: {e}")
                              
                      if not loaded_ok:
-                         for size in possible_sizes:
-                             for inp_dim in possible_input_dims:
-                                 try:
-                                     # Try instantiating this size
-                                     from config import ACTION_DIM
-                                     test_policy = CQLNetwork(input_dim=inp_dim, hidden_dim=HIDDEN_DIM, action_dim=ACTION_DIM, use_ln=not is_discrete, model_size=size)
-                                     test_policy.to(self.device)
-                                     
-                                     # Strict Load
-                                     test_policy.load_state_dict(state_dict, strict=True)
-                                     
-                                     # If success:
-                                     final_policy = test_policy
-                                     self.model_name = os.path.basename(path)
-                                     logging.info(f"Successfully loaded {size.upper()} CQL Policy (Input={inp_dim}, Actions={ACTION_DIM}) from {path}")
-                                     loaded_ok = True
-                                     break
-                                     
-                                 except RuntimeError as e:
-                                     pass
-                             if loaded_ok: break
+                        try:
+                            extracted_inp_dim = state_dict['input_layer.weight'].shape[1]
+                        except Exception:
+                            extracted_inp_dim = 128 if is_discrete else 32
+                            
+                        for size in possible_sizes:
+                            try:
+                                # Try instantiating this size
+                                from config import ACTION_DIM
+                                test_policy = CQLNetwork(input_dim=extracted_inp_dim, hidden_dim=HIDDEN_DIM, action_dim=ACTION_DIM, use_ln=not is_discrete, model_size=size)
+                                test_policy.to(self.device)
+                                
+                                # Strict Load
+                                test_policy.load_state_dict(state_dict, strict=True)
+                                
+                                # If success:
+                                final_policy = test_policy
+                                self.model_name = os.path.basename(path)
+                                logging.info(f"Successfully loaded {size.upper()} CQL Policy (Input={extracted_inp_dim}, Actions={ACTION_DIM}) from {path}")
+                                loaded_ok = True
+                                break
+                                
+                            except RuntimeError as e:
+                                logging.error(f"Size {size} failed: {e}")
+                        if loaded_ok: break
                               
                      if loaded_ok:
                          weights_loaded = True
@@ -399,10 +418,11 @@ class Planner:
         return final_policy
 
 
-    def decide(self, z_current, state_vec=None, dist_threshold=None, continuous_z=None):
+    def decide(self, z_current, state_vec=None, dist_threshold=None, continuous_z=None, img=None):
         """
         Input: z_current (32 or 512,) Latent, state_vec (3,) Explicit State
                continuous_z: Optional 32-dim continuous embedding for distance calc (discrete VQ-VAE)
+               img: Optional raw image frame for E2E models
         Output: (action_id, distance_to_goal, effective_threshold, goal_index, active_goal_dict, reflex_triggered)
         """
         now = time.time()
@@ -467,6 +487,35 @@ class Planner:
             distance = 10.0
         
         # 3. Policy Inference
+        
+        # [NEW] Handle End-To-End Image Policies
+        from modules.spatial_model import E2EBCNetwork
+        if isinstance(self.policy, E2EBCNetwork):
+            if img is None:
+                return 0, distance, dist_threshold if dist_threshold else 0.0, goal_idx, active_goal_dict, False
+                
+            # Perform torchvision ImageNet transforms
+            import torchvision.transforms as transforms
+            from PIL import Image
+            import cv2
+            
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(img_rgb)
+            
+            transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+            ])
+            
+            img_t = transform(pil_img).unsqueeze(0).to(self.device)
+            with torch.no_grad():
+                logits = self.policy(img_t)
+                action_id = torch.argmax(logits, dim=-1).item()
+                
+            return action_id, distance, dist_threshold if dist_threshold else 0.0, goal_idx, active_goal_dict, False
+
         # Assumption: Model input is ALWAYS 32 dims (1 fixed-goal frame)
         in_features = getattr(self.policy.input_layer, 'in_features', 0) if hasattr(self.policy, 'input_layer') else 0
         is_telemetry_oracle = in_features == 8

@@ -170,11 +170,7 @@ class CognitiveEngine:
         # UI should boot up without any goals preselected
         self.goal_imgs_b64 = []
         
-        # [NEW] Alternating Fixed Goal Evaluation Feature
-        self.fg_eval_phase = 'MODEL' # Alternates between 'MODEL' and 'MARKOV'
-        self.fg_eval_bouts = 0
-        self.fg_eval_reached = False
-        self.fg_eval_step_count = float('nan')
+        # [REMOVED] Fixed Goal Evaluation Feature
         self.cql_eval_results = []
         self.latched_eval_dist = None
         self.latched_eval_action = 0
@@ -1106,12 +1102,12 @@ class CognitiveEngine:
         state_vec = np.array([action_norm, dist_norm], dtype=np.float32)
         return state_vec, curr_sonar
 
-    def _decide_cql_policy(self, z_cur, state_vec, curr_sonar):
+    def _decide_cql_policy(self, z_cur, state_vec, curr_sonar, img=None):
         # We must call planner.decide every frame to maintain the VAE optical flow buffer (z_smoothed)
         # Pass continuous embedding for accurate distance computation with discrete architectures
         continuous_z = getattr(self.vision, 'last_continuous_z', None)
         action, dist, eff_thresh, goal_idx, active_goal_dict, reflex_triggered = self.planner.decide(
-            z_cur, state_vec=state_vec, dist_threshold=self.stop_threshold, continuous_z=continuous_z
+            z_cur, state_vec=state_vec, dist_threshold=self.stop_threshold, continuous_z=continuous_z, img=img
         )
         
         prev_state = getattr(self.cql_controller, 'state', None)
@@ -1128,9 +1124,7 @@ class CognitiveEngine:
                 import random
                 action = random.choices([1, 2, 3, 4], weights=[0.6, 0.1, 0.15, 0.15], k=1)[0]
                 
-        if getattr(self, 'fg_eval_reached', False):
-            action = 5 # Force Intentional Stop during dwell phase
-            reflex_triggered = False
+        # Dwell stop logic removed
         
         if reflex_triggered:
             self.cql_controller.state = 'WAITING'
@@ -1142,9 +1136,7 @@ class CognitiveEngine:
             if self.active_model_name and ('fixed_goal' in self.active_model_name or 'discrete_cql' in self.active_model_name):
                 effective_sonar = curr_sonar
                 
-            # [CRITICAL FIX] Prevent internal MarkovWASD safety reflexes from overriding Intentional Stop during Dwell
-            if getattr(self, 'fg_eval_reached', False):
-                effective_sonar = 0.0
+            # Safety reflex override for Dwell removed
                 
             target_action = self.cql_controller.get_action(effective_sonar, teleop_action=action)
         
@@ -1214,8 +1206,7 @@ class CognitiveEngine:
             except Exception:
                 s_dist = 999.0
             teleop_val = self.current_live_action
-            if getattr(self, 'fg_eval_reached', False):
-                teleop_val = 5 # Force Intentional Stop during dwell phase
+            # Dwell teleop override removed
             
             algo = self.explorer.current_algo
             if algo == "Markov": ctrl = self.explorer.markov
@@ -1229,9 +1220,7 @@ class CognitiveEngine:
             prev_state = getattr(ctrl, 'state', None) if ctrl else None
             effector_dist = s_dist if self.reflex_enabled else 0.0
             
-            # [CRITICAL FIX] Prevent internal MarkovWASD safety reflexes from overriding Intentional Stop during Dwell
-            if getattr(self, 'fg_eval_reached', False):
-                effector_dist = 0.0
+            # Safety reflex override for Dwell removed
             
             current_goal = None
             current_img_goal = None
@@ -1328,8 +1317,8 @@ class CognitiveEngine:
         is_latentslam_active = hasattr(self, 'slam_inference') and self.slam_inference is not None and self.active_model_name and 'latentslam' in self.active_model_name.lower()
         
         if self.active_model_name and self.planner and not is_latentslam_active and not getattr(self, 'telemetry_warmup_active', False):
-             if z_cur is not None:
-                 target_action, dist, goal_idx, reflex_triggered, is_bout_start = self._decide_cql_policy(z_cur, state_vec, curr_sonar)
+             if z_cur is not None or "e2e" in self.active_model_name.lower():
+                 target_action, dist, goal_idx, reflex_triggered, is_bout_start = self._decide_cql_policy(z_cur, state_vec, curr_sonar, img=img)
         elif is_latentslam_active:
              if z_cur is not None:
                  target_action, dist = self._decide_latent_slam(z_cur, curr_sonar)
@@ -1363,7 +1352,7 @@ class CognitiveEngine:
 
         with self.state_lock:
              self.state['controller'] = active_ctrl
-             self.state['fg_eval_phase'] = getattr(self, 'fg_eval_phase', 'MODEL')
+             # fg_eval_phase removed
              self.state['latent_dist'] = final_dist
              self.state['latent_thresh'] = self.stop_threshold
              
@@ -1597,19 +1586,13 @@ class CognitiveEngine:
              semantic_action = kwargs.get('semantic_action', target_action)
              if isinstance(semantic_action, tuple):
                  # Pluck the current integer action ID out of the active pacer or explorer
-                 if getattr(self, 'fg_eval_phase', 'MODEL') == 'MARKOV' and hasattr(self, 'explorer') and hasattr(self.explorer, 'markov'):
-                     markov_action = getattr(self.explorer.markov, 'current_action', 'STOP')
-                     if getattr(self.explorer.markov, 'state', 'STOP') == 'STOP': markov_action = 'STOP'
-                     map_dict = {'FWD': 1, 'BACK': 2, 'LEFT': 3, 'RIGHT': 4, 'STOP': 0}
-                     semantic_action = map_dict.get(markov_action, 0)
-                 else:
-                     current_algo = getattr(self.explorer, 'current_algo', None) if getattr(self, 'explorer', None) else None
-                     if current_algo == "Algorithmic Oracle" and getattr(self.explorer, 'algo_oracle', None) and hasattr(self.explorer.algo_oracle.pacer, 'current_action_id'):
-                         semantic_action = getattr(self.explorer.algo_oracle.pacer, 'current_action_id', 0)
-                     elif hasattr(self, 'cql_controller') and self.cql_controller and hasattr(self.cql_controller, 'current_action_id'):
-                         semantic_action = getattr(self.cql_controller, 'current_action_id', 0)
-                     elif hasattr(self, 'explorer') and self.explorer and hasattr(self.explorer, 'current_action_id'):
-                         semantic_action = getattr(self.explorer, 'current_action_id', 0)
+                 current_algo = getattr(self.explorer, 'current_algo', None) if getattr(self, 'explorer', None) else None
+                 if current_algo == "Algorithmic Oracle" and getattr(self.explorer, 'algo_oracle', None) and hasattr(self.explorer.algo_oracle.pacer, 'current_action_id'):
+                     semantic_action = getattr(self.explorer.algo_oracle.pacer, 'current_action_id', 0)
+                 elif hasattr(self, 'cql_controller') and self.cql_controller and hasattr(self.cql_controller, 'current_action_id'):
+                     semantic_action = getattr(self.cql_controller, 'current_action_id', 0)
+                 elif hasattr(self, 'explorer') and self.explorer and hasattr(self.explorer, 'current_action_id'):
+                     semantic_action = getattr(self.explorer, 'current_action_id', 0)
 
              action_label = ACTION_NAMES.get(semantic_action, '?')
              if semantic_action == 0 and 'reflex_triggered' in kwargs and kwargs['reflex_triggered']:
@@ -1625,13 +1608,6 @@ class CognitiveEngine:
              # Export evaluation state for UI
              self.state['telemetry_warmup_active'] = getattr(self, 'telemetry_warmup_active', False)
              self.state['telemetry_init_frames_left'] = max(0, 10 - len(getattr(self, 'telemetry_init_frames', [])))
-             self.state['fg_eval_reached'] = getattr(self, 'fg_eval_reached', False)
-             if getattr(self, 'fg_eval_reached', False):
-                 self.state['fg_eval_dwell_left'] = max(0, (getattr(self, 'fg_eval_step_count', 0) + 10) - getattr(self, 'fg_eval_bouts', 0))
-             else:
-                 self.state['fg_eval_dwell_left'] = 0
-             self.state['fg_eval_timeout_left'] = max(0, 50 - getattr(self, 'fg_eval_bouts', 0))
-             self.state['fg_eval_bouts'] = getattr(self, 'fg_eval_bouts', 0)
              self.state['telemetry_source_algo'] = getattr(self, 'telemetry_source_algo', None)
              self.state['active_model_name'] = getattr(self, 'active_model_name', None)
              
@@ -1788,102 +1764,7 @@ class CognitiveEngine:
                     
                     is_fixed_goal = is_cql_fixed_goal or is_algo_oracle
                     
-                    if is_fixed_goal:
-                        if self.fg_eval_phase == 'MODEL':
-                            if is_bout_start:
-                                self.fg_eval_bouts += 1
-                                
-                            if is_algo_oracle:
-                                oracle_ctrl = getattr(self.explorer, 'algo_oracle', None)
-                                active_pacer = oracle_ctrl.pacer if oracle_ctrl else None
-                                active_name = "Algorithmic_Oracle"
-                            else:
-                                active_pacer = self.cql_controller
-                                active_name = self.active_model_name
-                                
-                            pacer_act = getattr(active_pacer, 'current_action_id', 0)
-                            
-                            if not self.fg_eval_reached:
-                                reached_via_stop = (pacer_act == 5)
-                                reached_via_dist = (dist is not None and dist <= self.stop_threshold)
-                                
-                                if is_algo_oracle:
-                                    reached_via_dist = False # Algorithmic Oracle relies on ground truth tracking, not latent distance
-                                
-                                if reached_via_stop or reached_via_dist:
-                                    self.fg_eval_reached = True
-                                    self.fg_eval_step_count = self.fg_eval_bouts
-                                    logging.info(f"Model reached goal in {self.fg_eval_step_count} steps.")
-                            
-                            if not self.fg_eval_reached and self.fg_eval_bouts >= 50:
-                                # Timeout while driving
-                                m_coords = self.state.get('goal_manifold_coords', [])
-                                c_coord = m_coords[goal_idx] if m_coords and goal_idx < len(m_coords) else None
-                                self.cql_eval_results.append(float('nan'))
-                                logging.info("Model abandoned goal after 50 steps (Timeout). Switch to Markov.")
-                                if self.recording and self.logger:
-                                    self.logger.log_goal_event("ABANDONED", goal_idx, c_coord, 50, active_name)
-                                self.fg_eval_phase = 'MARKOV'
-                                self.fg_eval_bouts = 0
-                                self.fg_eval_reached = False
-                                self.fg_eval_step_count = float('nan')
-                                
-                            elif self.fg_eval_reached and self.fg_eval_bouts >= self.fg_eval_step_count + 10:
-                                # Reached goal, and dwelled for 10 steps
-                                m_coords = self.state.get('goal_manifold_coords', [])
-                                c_coord = m_coords[goal_idx] if m_coords and goal_idx < len(m_coords) else None
-                                self.cql_eval_results.append(self.fg_eval_step_count)
-                                logging.info(f"Model target finished smoothly in {self.fg_eval_step_count} steps after 10s dwell. Switch to Markov.")
-                                if self.recording and self.logger:
-                                    self.logger.log_goal_event("REACHED", goal_idx, c_coord, self.fg_eval_step_count, active_name)
-                                self.fg_eval_phase = 'MARKOV'
-                                self.fg_eval_bouts = 0
-                                self.fg_eval_reached = False
-                                self.fg_eval_step_count = float('nan')
-                                
-                        elif self.fg_eval_phase == 'MARKOV':
-                            # Override target_action to let Markov randomizer reposition robot
-                            try:
-                                markov_sonar = float(self.state.get('sensor_dist', 0))
-                            except ValueError:
-                                markov_sonar = 0.0
-                            
-                            markov_prev = getattr(self.explorer.markov, 'state', None)
-                            target_action = self.explorer.markov.get_action(markov_sonar)
-                            markov_new = getattr(self.explorer.markov, 'state', None)
-                            
-                            is_bout_start = (markov_new == 'MOVE' and markov_prev in ['STOP', 'WAITING'])
-                            if is_bout_start:
-                                self.fg_eval_bouts += 1
-                                
-                            # Ensure the robot is sufficiently far from the goal before yielding back
-                            min_start_dist = self.stop_threshold * 1.5
-                                
-                            if self.fg_eval_bouts >= 10 and (dist is None or dist > min_start_dist): # Switch back to MODEL
-                                logging.info(f"Markov random positioner finished {self.fg_eval_bouts} steps (Dist: {dist:.2f} > {min_start_dist:.2f}). Switching back to Fixed Goal model.")
-                                self.fg_eval_phase = 'MODEL'
-                                self.fg_eval_bouts = 0
-                                
-                                if self.cql_controller:
-                                    self.cql_controller.state = 'WAITING'
-                                    self.cql_controller.state_start_time = 0
-                                    self.cql_controller.current_action_id = 0
-                                    if hasattr(self.cql_controller, 'action_queue'):
-                                        self.cql_controller.action_queue = []
-                                        
-                                if is_algo_oracle and getattr(self.explorer, 'algo_oracle', None):
-                                    oracle_pacer = getattr(self.explorer.algo_oracle, 'pacer', None)
-                                    if oracle_pacer:
-                                        oracle_pacer.state = 'WAITING'
-                                        oracle_pacer.state_start_time = 0
-                                        oracle_pacer.current_action_id = 0
-                                        if hasattr(oracle_pacer, 'action_queue'):
-                                            oracle_pacer.action_queue = []
-                                
-                                if self.recording and self.logger:
-                                     m_coords = self.state.get('goal_manifold_coords', [])
-                                     c_coord = m_coords[goal_idx] if m_coords and goal_idx < len(m_coords) else None
-                                     self.logger.log_goal_event("SELECTED", goal_idx, c_coord, 0, self.active_model_name)
+                    # Removed Fixed Goal Scoreboard Logic (Dwell/Timeout) at User Request
                     # ----------------------------
                     # --- Oracle Analytics Logic ---
                     current_algo = getattr(self.explorer, 'current_algo', None)

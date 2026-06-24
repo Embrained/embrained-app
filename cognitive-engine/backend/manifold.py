@@ -363,7 +363,9 @@ class ManifoldService:
                         
                         # Handle different return types
                         if isinstance(ret, tuple) or isinstance(ret, list):
-                            if len(ret) == 4:
+                            if len(ret) == 5:
+                                _, mu, _, _, _ = ret
+                            elif len(ret) == 4:
                                 _, mu, _, _ = ret
                             elif len(ret) == 3:
                                 _, mu, _ = ret

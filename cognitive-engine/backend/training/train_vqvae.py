@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from config import IMG_H, IMG_W, DATA_DIR, MODELS_DIR
 from modules.spatial_model import DiscreteVQVAE
 from backend.services.datasets import DatasetService
+from backend.train_vae import export_global_latents
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("TrainVQVAE")
@@ -67,7 +68,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
     parser.add_argument("--lr", type=float, default=2e-4, help="Learning rate (VQ-VAEs prefer slightly higher LRs)") 
     parser.add_argument("--latent_dim", type=int, default=32, help="Embedding dimension")
-    parser.add_argument("--num_embeddings", type=int, default=512, help="Codebook size")
+    parser.add_argument("--num_embeddings", type=int, default=128, help="Codebook size")
     args = parser.parse_args()
 
     logger.info(f"Starting DiscreteVQVAE Training on {DEVICE}")
@@ -105,14 +106,14 @@ def main():
             
             if scaler:
                 with torch.amp.autocast('cuda'):
-                    recon, quantized, vq_loss, perplexity = model(imgs)
+                    recon, z_e, quantized, vq_loss, perplexity = model(imgs)
                     recon_loss = nn.functional.mse_loss(recon, imgs)
                     loss = recon_loss + vq_loss
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
             else:
-                recon, quantized, vq_loss, perplexity = model(imgs)
+                recon, z_e, quantized, vq_loss, perplexity = model(imgs)
                 recon_loss = nn.functional.mse_loss(recon, imgs)
                 loss = recon_loss + vq_loss
                 loss.backward()
@@ -140,6 +141,11 @@ def main():
     model_path = os.path.join(DATA_DIR, model_name)
     torch.save(model.state_dict(), model_path)
     logger.info(f"Model saved to {model_path}")
+
+    # Export Global Latents for visualization and goal mapping
+    logger.info("Extracting global structural latents...")
+    export_global_latents(model, DATA_DIR, model_name, architecture='discrete')
+    logger.info("Global latent extraction complete.")
 
 if __name__ == "__main__":
     main()

@@ -286,7 +286,7 @@ class DiscreteVQVAE(TinyVAE):
         quantized, vq_loss, perplexity, encodings = self.vq(z_e)
         
         recon = self.decoder(self.decoder_input(quantized))
-        return recon, quantized, vq_loss, perplexity
+        return recon, z_e, quantized, vq_loss, perplexity
 
 
 class OracleQNetwork(nn.Module):
@@ -502,3 +502,14 @@ class ValueNetwork(nn.Module):
             
         x = torch.cat([z_cur, z_goal], dim=-1)
         return self.net(x)
+
+class E2EBCNetwork(nn.Module):
+    def __init__(self, num_classes=6):
+        super().__init__()
+        import torchvision.models as models
+        self.model = models.resnet18(weights=None)
+        num_ftrs = self.model.fc.in_features
+        self.model.fc = nn.Linear(num_ftrs, num_classes)
+        
+    def forward(self, img_tensor):
+        return self.model(img_tensor)

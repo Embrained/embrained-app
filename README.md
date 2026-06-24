@@ -123,12 +123,7 @@ The default install is CPU-only. For faster training with an NVIDIA GPU:
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
-**Simulation (PyBullet):**
-Requires a C/C++ compiler ([MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) on Windows):
 
-```bash
-pip install -r requirements-simulation.txt
-```
 
 ---
 

@@ -391,7 +391,7 @@ class SpatialCQLDataset(Dataset):
                 batch_nodes = unique_nodes[i:i+batch_size]
                 imgs = torch.stack([self._load_img(n) for n in batch_nodes]).to(device)
                 if hasattr(encoder, 'vq'):
-                    _, mus, _, _ = encoder(imgs)
+                    _, _, mus, _, _ = encoder(imgs)
                 else:
                     feats = encoder.encoder(imgs)
                     mus = encoder.fc_mu(feats)

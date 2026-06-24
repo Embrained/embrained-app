@@ -346,8 +346,11 @@ def export_global_latents(model, data_root, model_name, architecture='continuous
                     img = Image.open(abs_path).convert('RGB')
                     img_tensor = transform(img).unsqueeze(0).to(DEVICE)
                     if architecture == 'discrete':
-                        _, _, z_q, _, _, _ = model(img_tensor)
-                        val = z_q.squeeze(0).cpu()
+                        if 'DiscreteVQVAE' in type(model).__name__:
+                            _, z_e, _, _, _ = model(img_tensor)
+                        else:
+                            _, z_e, _, _, _, _ = model(img_tensor)
+                        val = z_e.squeeze(0).cpu()
                     else:
                         _, mu, _ = model(img_tensor)
                         val = mu.squeeze(0).cpu()

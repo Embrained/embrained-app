@@ -76,19 +76,10 @@ const getEvalSuffix = (isActive, data) => {
     if (data.telemetry_warmup_active) {
         return ` (WARMUP - ${data.telemetry_init_frames_left} steps left)`;
     }
-    if (data.fg_eval_reached) {
-        return ` (DWELLING - ${data.fg_eval_dwell_left} steps left)`;
-    }
-    if (data.fg_eval_phase === 'MARKOV') {
-        return ` (REPOSITIONING - step ${data.fg_eval_bouts})`;
-    }
-    if (data.controller && data.controller !== 'Markov' && data.controller !== 'MarkovWASD') {
-        return ` (${data.fg_eval_timeout_left} steps to timeout)`;
-    }
     return "";
 };
 
-const formatModelName = (name, isActive, isMarkovPhase, isOracle, data) => {
+const formatModelName = (name, isActive, isOracle, data) => {
     let baseName = name;
     if (isOracle) baseName = 'TELEMETRY ORACLE (XYO)';
     else if (name.includes('-dark-wall-cql_')) baseName = 'CQL (DARK-WALL)_' + name.split('-dark-wall-cql_')[1].replace('.pth', '');
@@ -243,10 +234,9 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                     {/* 1. Telemetry Oracle */}
                                     {(() => {
                                         const isOracleReq = data.controller === 'Algorithmic Oracle' || data.telemetry_source_algo === 'Algorithmic Oracle';
-                                        const isMarkovPhase = data.fg_eval_phase === 'MARKOV';
                                         const isWarmupPhase = data.telemetry_warmup_active;
                                         
-                                        const isPulsing = isOracleReq && (isWarmupPhase || isMarkovPhase);
+                                        const isPulsing = isOracleReq && isWarmupPhase;
                                         const isSolid = isOracleReq && !isPulsing;
                                         
                                         const btnClass = isPulsing ? 'bg-orange-500 border-orange-400 text-white shadow-orange-200 animate-pulse' : 
@@ -261,7 +251,7 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                                 onClick={() => wrappedSendMessage('SET_CONTROLLER', isOracleReq ? null : 'Algorithmic Oracle')}
                                                 className={`px-2 py-1.5 rounded-lg text-[10px] leading-tight font-bold transition-all border shadow-sm flex items-center gap-1 ${btnClass}`}
                                             >
-                                                <span className="break-all flex-grow text-left">TELEMETRY (ALGORITHMIC ORACLE){getEvalSuffix(isOracleReq, data)}</span>
+                                                <span className="break-all flex-grow text-left">{formatModelName('Algorithmic Oracle', isOracleReq, true, data)}</span>
                                             </button>
                                         );
                                     })()}
@@ -269,13 +259,11 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                     {/* 2. Markov Randomizer */}
                                     {(() => {
                                         const isMarkov = data.controller === 'Markov';
-                                        const isRepositioning = data.fg_eval_phase === 'MARKOV' && data.controller !== 'Markov' && data.controller !== 'MarkovWASD';
                                         
                                         const btnClass = isMarkov ? 'bg-purple-600 border-purple-500 text-white shadow-purple-200' :
-                                                         isRepositioning ? 'bg-orange-500 border-orange-400 text-white shadow-orange-200 animate-pulse' :
                                                          'bg-white border-slate-200 text-slate-500 hover:bg-purple-50 hover:border-purple-200 hover:text-purple-600';
                                                          
-                                        const btnText = isRepositioning ? `MARKOV RANDOMIZER (ACTIVE)` : `MARKOV RANDOMIZER${getEvalSuffix(isMarkov, data)}`;
+                                        const btnText = `MARKOV RANDOMIZER${getEvalSuffix(isMarkov, data)}`;
 
                                         return (
                                             <button
@@ -326,13 +314,12 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                     {/* 5. CQL Models */}
                                     {models.filter(m => m.name.includes('cql') || m.name.includes('oracle_control')).map((model) => {
                                         const isActive = data.controller === model.name || data.telemetry_source_algo === model.name;
-                                        const isMarkovPhase = data.fg_eval_phase === 'MARKOV';
                                         
                                         const isWarmupPhase = isActive && data.telemetry_warmup_active;
                                         
                                         let btnClass = 'bg-white border-slate-200 text-slate-500 hover:bg-purple-50 hover:border-purple-200 hover:text-purple-600';
                                         if (isActive) {
-                                            if (isWarmupPhase || isMarkovPhase) {
+                                            if (isWarmupPhase) {
                                                 btnClass = 'bg-orange-500 border-orange-400 text-white shadow-orange-200 animate-pulse';
                                             } else {
                                                 btnClass = 'bg-purple-600 border-purple-500 text-white shadow-purple-200';
@@ -345,7 +332,7 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                                 onClick={() => wrappedSendMessage('SET_CONTROLLER', isActive ? null : model.name)}
                                                 className={`px-2 py-1.5 rounded-lg text-[10px] leading-tight font-bold transition-all border shadow-sm flex items-center gap-1 ${btnClass}`}
                                             >
-                                                <span className="break-all flex-grow text-left">{formatModelName(model.name, isActive, isMarkovPhase, false, data)}</span>
+                                                <span className="break-all flex-grow text-left">{formatModelName(model.name, isActive, false, data)}</span>
                                             </button>
                                         );
                                     })}
