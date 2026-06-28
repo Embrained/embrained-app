@@ -168,7 +168,10 @@ if os.path.exists(frontend_path):
         # 2. Fallback to index.html for client-side routing
         index_path = os.path.join(frontend_path, "index.html")
         if os.path.isfile(index_path):
-            return FileResponse(index_path)
+            return FileResponse(
+                index_path,
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+            )
             
         return {"detail": "Not Found"}
 else:

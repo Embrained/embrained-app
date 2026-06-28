@@ -65,10 +65,10 @@ const GoalPanel = ({
                     </div>
                     <input
                         type="range"
-                        min="0.1"
-                        max="10.0"
-                        step="0.1"
-                        value={threshold !== undefined ? threshold : 2.0}
+                        min="2.0"
+                        max="6.0"
+                        step="0.5"
+                        value={threshold !== undefined ? threshold : 3.0}
                         onChange={(e) => onThresholdChange && onThresholdChange(parseFloat(e.target.value))}
                         className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                     />

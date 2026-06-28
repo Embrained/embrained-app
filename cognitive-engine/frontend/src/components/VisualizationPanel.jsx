@@ -50,26 +50,24 @@ const VisualizationPanel = ({ keypoints, manifoldCoord, goalCoords, goalIdx, mat
             return;
         }
 
+        setPoints([]); // Clear points when parameters change
+
         let isMounted = true;
         const fetchPoints = () => {
             fetch('/api/manifold_points')
-                .then(res => res.json())
+                .then(r => r.json())
                 .then(data => {
-                    if (!isMounted) return;
-
-                    if (data.points && Array.isArray(data.points) && data.points.length > 0) {
+                    if (isMounted && data.points) {
                         setPoints(data.points);
-                    } else {
-                        // Keep points empty, but retry via interval
                     }
                 })
                 .catch(err => console.error("Failed to fetch manifold points:", err));
         };
 
-        // Initial fetch
+        // Fetch immediately on mount or activeVae/thresholdSpace change
         fetchPoints();
 
-        // Poll if empty
+        // Also set up a slow poll just in case points are generated after initial load
         const interval = setInterval(() => {
             setPoints(prev => {
                 if (prev.length === 0) {

@@ -233,8 +233,9 @@ const VaePanel = ({
                         <div className="flex flex-col gap-0.5">
                             <span className="text-[9px] text-indigo-500 font-bold uppercase tracking-wider">Architecture</span>
                             <select value={pipelineArchitecture} onChange={(e) => setPipelineArchitecture(e.target.value)} className="w-full bg-white/50 border border-slate-200 rounded px-1 py-0.5 text-[10px] font-mono focus:outline-none focus:border-indigo-400 text-indigo-700" disabled={isVaeTraining}>
-                                <option value="continuous">Continuous (β-VAE)</option>
+                            <option value="continuous">Continuous (β-VAE)</option>
                                 <option value="discrete">Discrete (VQ-VAE)</option>
+                                <option value="contrastive">Contrastive (CVE)</option>
                             </select>
                         </div>
                         {/* Resolution */}
@@ -293,7 +294,7 @@ const VaePanel = ({
             <div className="flex flex-row gap-1 h-28">
                 {/* 1. Recon Loss */}
                 <div className="flex-1 bg-white/60 rounded border border-slate-200/50 p-1 relative">
-                    <span className="absolute top-1 right-2 text-[8px] font-bold text-purple-500 uppercase">{pipelineArch === 'latentslam' ? 'Recon/Total' : (pipelineArch === 'imitation' ? 'Training Loss' : 'Recon Loss')}</span>
+                    <span className="absolute top-1 right-2 text-[8px] font-bold text-purple-500 uppercase">{pipelineArch === 'latentslam' ? 'Recon/Total' : (pipelineArch === 'imitation' ? 'Training Loss' : (pipelineArchitecture === 'contrastive' ? 'Contrastive Loss' : 'Recon Loss'))}</span>
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={vaeLossHistory}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -314,7 +315,7 @@ const VaePanel = ({
 
                 {/* 2. KLD Loss */}
                 <div className="flex-1 bg-white/60 rounded border border-slate-200/50 p-1 relative">
-                    <span className="absolute top-1 right-2 text-[8px] font-bold text-indigo-500 uppercase">{pipelineArch === 'latentslam' ? 'KL Divergence' : (pipelineArch === 'dreamer' ? 'Val Loss' : 'KL Divergence')}</span>
+                    <span className="absolute top-1 right-2 text-[8px] font-bold text-indigo-500 uppercase">{pipelineArch === 'latentslam' ? 'KL Divergence' : (pipelineArch === 'dreamer' ? 'Val Loss' : (pipelineArchitecture === 'contrastive' ? 'Action Loss' : 'KL Divergence'))}</span>
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={vaeLossHistory}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />

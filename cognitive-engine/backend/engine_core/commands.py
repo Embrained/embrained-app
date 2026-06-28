@@ -34,6 +34,7 @@ class CommandDispatcher:
             self._handle_led(payload)
         elif cmd_type == 'SOUND':
             self._handle_sound(payload)
+
         elif cmd_type in ('SET_VAE_MODEL', 'SET_BVAE_MODEL'):
             self._handle_set_vae(payload)
         elif cmd_type == 'SET_GOALS':
@@ -132,7 +133,7 @@ class CommandDispatcher:
                     vaes.sort(key=os.path.getmtime, reverse=True)
                     latest_vae = os.path.basename(vaes[0])
                     logging.info(f"Auto-syncing global VAE for Algorithmic Oracle Manifold mapping: {latest_vae}")
-                    self.engine.load_vae_model(latest_vae)
+                    self.engine.load_bg_vision_model(latest_vae)
                     self.engine.state_manager.update('bvae_model', latest_vae)
                     
                     # Also sync a representative target image for the UI inset
@@ -206,7 +207,7 @@ class CommandDispatcher:
             self.engine.state_manager.update('bvae_model', "N/A")
             logging.info("VAE Model Deselected")
         else:
-            if self.engine.load_vae_model(payload):
+            if self.engine.load_bg_vision_model(payload):
                 self.engine.state_manager.update('bvae_model', payload)
 
     def _handle_set_goals(self, payload):

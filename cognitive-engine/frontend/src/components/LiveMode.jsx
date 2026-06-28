@@ -22,7 +22,7 @@ import GoalPanel from './GoalPanel';
 import ActuatorStatus from './ActuatorStatus';
 import CameraFeed from './CameraFeed';
 import { useKeyboardControls } from '../hooks/useKeyboardControls';
-import { Layers, Activity, Cpu, Disc, Square, Wifi, WifiOff, ArrowRight } from 'lucide-react';
+import { Layers, Activity, Cpu, Disc, Square, Wifi, WifiOff, ArrowRight, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 
 const StatCard = ({ label, value, unit, icon: Icon, color = "blue" }) => (
@@ -177,8 +177,9 @@ const LiveMode = ({ data, connected, sendMessage }) => {
         };
     }, [connected, sendMessage]);
 
-    const activeManifoldModel = (data.bvae_model && data.bvae_model !== "N/A") ? data.bvae_model :
-        ((data.controller && data.controller.includes("latentslam")) ? data.controller : "N/A");
+    const activeManifoldModel = (data.bvae_model && data.bvae_model !== "N/A") 
+        ? data.bvae_model 
+        : "N/A";
 
     // [NEW] Enforce Threshold Scaling — distance is always in continuous z_e space
     React.useEffect(() => {
@@ -303,7 +304,9 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                         return (
                                             <button
                                                 key={vae.name}
-                                                onClick={() => wrappedSendMessage('SET_VAE_MODEL', isActiveVae ? null : vae.name)}
+                                                onClick={() => {
+                                                    wrappedSendMessage('SET_VAE_MODEL', isActiveVae ? null : vae.name);
+                                                }}
                                                 className={`px-2 py-1.5 rounded-lg text-[10px] leading-tight font-bold transition-all border shadow-sm flex items-center gap-1 ${isActiveVae ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-200' : 'bg-white border-slate-200 text-slate-500 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-600'}`}
                                             >
                                                 <span className="break-all flex-grow text-left">VAE: {vae.name.replace('.pth', '').replace('_', ' ').toUpperCase()}</span>
@@ -329,7 +332,9 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                         return (
                                             <button
                                                 key={model.name}
-                                                onClick={() => wrappedSendMessage('SET_CONTROLLER', isActive ? null : model.name)}
+                                                onClick={() => {
+                                                    wrappedSendMessage('SET_CONTROLLER', isActive ? null : model.name);
+                                                }}
                                                 className={`px-2 py-1.5 rounded-lg text-[10px] leading-tight font-bold transition-all border shadow-sm flex items-center gap-1 ${btnClass}`}
                                             >
                                                 <span className="break-all flex-grow text-left">{formatModelName(model.name, isActive, false, data)}</span>
@@ -394,9 +399,9 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                     {/* [NEW] Stop Threshold Dropdown */}
                                     {(data.controller && data.controller !== "N/A") && (() => {
                                         // Distance is always in continuous z_e space
-                                        const thresholds = [1.00, 1.50, 2.00, 2.50, 2.75, 3.00, 3.25, 3.50, 3.75, 4.00, 4.25, 4.50, 4.75, 5.00];
+                                        const thresholds = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0];
                                         
-                                        const currentVal = data.latent_thresh !== undefined && data.latent_thresh !== null ? data.latent_thresh : 2.00;
+                                        const currentVal = data.latent_thresh !== undefined && data.latent_thresh !== null ? data.latent_thresh : 3.00;
                                         
                                         // Ensure current value is in the dropdown to avoid blank selections
                                         const optionsToRender = [...thresholds];
@@ -426,7 +431,7 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                         );
                                     })()}
 
-                                    {/* Visualization Mode Dropdown removed as per user request to simplify -> default Structure */}
+
                                 </div>
                             </div>
 
@@ -440,17 +445,18 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                         goalIdx={data.goal_idx || 0}
                                         matchCoord={data.match_manifold_coord}
                                         activeVae={activeManifoldModel}
+
                                         bounds={data.manifold_bounds}
                                         latentDist={data.latent_dist}
                                         latentThreshold={data.latent_thresh}
-                                        visualizationMode='default' // [NEW]
+                                        visualizationMode='default'
                                         onPointClick={(data.controller && data.controller.includes('fixed_goal')) ? undefined : (idx) => wrappedSendMessage('SET_MANIFOLD_GOAL', { index: idx })}
                                     />
                                 ) : (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-400 p-4">
-                                        <Activity size={32} className="mb-2 opacity-50 text-slate-300" />
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">System Offline</span>
-                                        <span className="text-[9px] opacity-70">Select VAE to visualize</span>
+                                        <AlertTriangle size={32} className="mb-2 opacity-50 text-amber-500" />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">No VAE Loaded</span>
+                                        <span className="text-[9px] opacity-70">A Background VAE is required for latent visualization.</span>
                                     </div>
                                 )}
                             </div>

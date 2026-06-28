@@ -11,7 +11,7 @@ if not exist "venv\Scripts\activate.bat" (
 
 echo.
 echo Select Engine Mode:
-echo [1] Discrete Markov (Default)
+echo [1] CVE + CQL Navigation (Default)
 echo [2] Continuous Action Chunking
 set /p mode="Enter choice (1 or 2): "
 
@@ -20,7 +20,7 @@ if "%mode%"=="2" (
     set ENGINE_FLAG=--continuous
     echo Launching Continuous Action Chunking engine...
 ) else (
-    echo Launching Discrete Markov engine...
+    echo Launching CVE + CQL Navigation engine...
 )
 
 call venv\Scripts\activate.bat

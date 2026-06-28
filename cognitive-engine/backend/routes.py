@@ -619,13 +619,18 @@ async def list_images_in_folder(req: ImagesRequest):
 
 @router.get("/api/manifold_points")
 async def get_manifold_points(request: Request):
-    engine = get_engine(request) 
-    if not engine or not engine.manifold or not engine.manifold.is_ready:
+    engine = get_engine(request)
+    if not engine:
         return {"points": [], "bounds": None}
     
+    active_manifold = engine.bg_manifold if engine.bg_manifold and engine.bg_manifold.is_ready else None
+    
+    if not active_manifold or not active_manifold.is_ready:
+        return {"points": [], "bounds": None}
+        
     return {
-        "points": engine.manifold.manifold_points if engine.manifold.manifold_points else [], 
-        "bounds": getattr(engine.manifold, 'bounds', None)
+        "points": active_manifold.manifold_points if active_manifold.manifold_points else [], 
+        "bounds": getattr(active_manifold, 'bounds', None)
     }
 
 @router.get("/api/experience_map")

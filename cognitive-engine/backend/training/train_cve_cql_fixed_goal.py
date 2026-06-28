@@ -1,8 +1,9 @@
 # Embrained - Neural Navigation Software Suite
 # Copyright (C) 2026 Embrained
 #
-# Training Pipeline for Fixed-Goal CQL using continuous VAE
+# Training Pipeline for Fixed-Goal CQL using Contrastive Visuomotor Encoder (CVE)
 # Supports multiple curated goal images in data/goals/ directory.
+# Terminal detection uses VAE nearest-neighbor distance to any goal image.
 
 import os
 import sys
@@ -16,11 +17,25 @@ import torchvision.transforms as T
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from config import DATA_DIR
 from backend.train_cql import train as run_cql_train
-from modules.spatial_model import TinyVAE
+from modules.spatial_model import TinyVAE, ContrastiveVisuomotorEncoder
+
+def load_cve_encoder(model_path, device):
+    """Load a CVE encoder from a checkpoint path."""
+    state_dict = torch.load(model_path, map_location=device, weights_only=True)
+    latent_dim, model_size, img_dim, in_channels = TinyVAE.detect_size(state_dict)
+    n_actions = state_dict['action_predictor.2.weight'].shape[0]
+    encoder = ContrastiveVisuomotorEncoder(
+        latent_dim=latent_dim, model_size=model_size,
+        input_spatial_dim=img_dim, in_channels=in_channels,
+        n_actions=n_actions
+    ).to(device)
+    encoder.load_state_dict(state_dict)
+    encoder.eval()
+    return encoder, latent_dim, img_dim
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Starting Fixed-Goal CQL Offline Reinforcement Learning on {device}")
+    print(f"Starting CVE Fixed-Goal CQL Offline Reinforcement Learning on {device}")
     
     DATA_ROOT = os.path.abspath(DATA_DIR)
     
@@ -33,46 +48,43 @@ def main():
     
     print(f"Found {len(goal_images)} goal images in data/goals/")
         
-    # Find the latest VAE model
-    print("Searching for latest Continuous VAE checkpoint in data directory...")
-    vae_candidates = glob.glob(os.path.join(DATA_ROOT, '*vae_continuous_*.pth'))
-    vae_candidates = [f for f in vae_candidates if not any(x in f.lower() for x in ['hello_world', 'cql', 'reflex', 'fixed_goal', 'policy'])]
-    if not vae_candidates:
-        print("Error: No VAE found matching pattern '*vae_continuous_*.pth'!")
+    # Find the latest CVE model
+    print("Searching for latest CVE checkpoint in data directory...")
+    cve_candidates = glob.glob(os.path.join(DATA_ROOT, '*cve*.pth'))
+    cve_candidates = [f for f in cve_candidates if not any(x in f.lower() for x in ['hello_world', 'cql', 'reflex', 'fixed_goal', 'policy'])]
+    if not cve_candidates:
+        print("Error: No CVE model found matching pattern '*cve*.pth'!")
         return
         
-    vae_candidates.sort(key=os.path.getmtime, reverse=True)
-    VAE_PATH = vae_candidates[0]
-    vae_basename = os.path.basename(VAE_PATH).replace('.pth', '')
-    print(f"-> Selected latest VAE: {os.path.basename(VAE_PATH)}")
+    cve_candidates.sort(key=os.path.getmtime, reverse=True)
+    CVE_PATH = cve_candidates[0]
+    cve_basename = os.path.basename(CVE_PATH).replace('.pth', '')
+    print(f"-> Selected latest CVE: {os.path.basename(CVE_PATH)}")
 
-    print("Loading VAE weights into memory...")
+    print("Loading CVE encoder weights into memory...")
     try:
-        vae_state = torch.load(VAE_PATH, map_location=device, weights_only=True)
-        latent_dim, model_size, img_dim, in_channels = TinyVAE.detect_size(vae_state)
-        vae = TinyVAE(latent_dim=latent_dim, model_size=model_size, input_spatial_dim=img_dim, in_channels=in_channels).to(device)
-        vae.load_state_dict(vae_state)
-        vae.eval()
-        print("-> VAE loaded successfully!")
+        encoder, latent_dim, img_dim = load_cve_encoder(CVE_PATH, device)
+        print(f"-> CVE loaded successfully! (Latent: {latent_dim}d, Input: {img_dim}x{img_dim})")
     except Exception as e:
-        print(f"Failed to load VAE: {e}")
+        print(f"Failed to load CVE: {e}")
         return
 
     transform = T.Compose([T.Resize((img_dim, img_dim)), T.ToTensor()])
     
-    # Encode all goal images
-    print(f"Encoding {len(goal_images)} goal images via VAE encoder...")
+    # Encode all goal images with CVE
+    print(f"Encoding {len(goal_images)} goal images via CVE encoder...")
     goal_latents = []
     with torch.no_grad():
         for gp in goal_images:
             img = Image.open(gp).convert('RGB')
             t_img = transform(img).unsqueeze(0).to(device)
-            _, mu, _ = vae(t_img)
-            goal_latents.append(mu.cpu().squeeze().numpy())
-    
-    goal_latents = np.array(goal_latents)  # [N, latent_dim]
+            mu = encoder.encode(t_img).cpu().squeeze().numpy()
+            goal_latents.append(mu)
+            
+    goal_latents = np.array(goal_latents)  # [N, 32]
     centroid = np.mean(goal_latents, axis=0)
     
+    # Stats
     dists_to_centroid = np.linalg.norm(goal_latents - centroid, axis=1)
     print(f"Goal centroid computed from {len(goal_latents)} images")
     print(f"  Avg dist to centroid: {np.mean(dists_to_centroid):.4f}")
@@ -80,7 +92,6 @@ def main():
     
     # Save group stats for CQL Dataset loader
     group_stats_path = os.path.join(goals_dir, 'group_stats.json')
-    closest_idx = int(np.argmin(dists_to_centroid))
     stats_data = {
         'centroid': centroid.tolist(),
         'goal_latents': goal_latents.tolist(),
@@ -93,7 +104,7 @@ def main():
     print(f"Saved goal stats ({len(goal_images)} goals + centroid) to {group_stats_path}")
         
     # Trigger Offline RL CQL Training
-    base_model_name = f"{vae_basename}-fixed_goal_cql_model"
+    base_model_name = f"{cve_basename}-fixed_goal_cql_model"
     new_model_name = f"{base_model_name}.pth"
     counter = 2
     while os.path.exists(os.path.join(DATA_ROOT, new_model_name)):
@@ -101,17 +112,17 @@ def main():
         counter += 1
         
     print("\n" + "="*50)
-    print(" INITIALIZING CONSERVATIVE Q-LEARNING (CQL) ")
+    print(" INITIALIZING CVE CONSERVATIVE Q-LEARNING (CQL) ")
     print("="*50 + "\n")
     
     run_cql_train(
         data_root=DATA_ROOT,
-        num_epochs=50,
-        vae_model_filename=os.path.basename(VAE_PATH),
+        num_epochs=300,
+        vae_model_filename=os.path.basename(CVE_PATH),
         batch_size=128,
-        learning_rate=1e-4,
-        alpha=0.2,
-        model_size='large',
+        learning_rate=5e-5,
+        alpha=0.1,
+        model_size='medium',
         dataset_percent=100,
         goal_type='group_goal',
         model_filename=new_model_name,
@@ -123,10 +134,13 @@ def main():
     try:
         import shutil
         if os.path.exists(out_path_full):
+            # Save centroid
             centroid_path = out_path_full.replace("model", "centroid").replace(".pth", ".npy")
             np.save(centroid_path, centroid)
             print(f"✅ Saved goal centroid: {os.path.basename(centroid_path)}")
             
+            # Save the goal image closest to centroid as the representative
+            closest_idx = int(np.argmin(dists_to_centroid))
             goal_img_out = out_path_full.replace("model", "goal_image").replace(".pth", ".jpg")
             shutil.copy(goal_images[closest_idx], goal_img_out)
             print(f"✅ Saved representative goal image: {os.path.basename(goal_img_out)}")

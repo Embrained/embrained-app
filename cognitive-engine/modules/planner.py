@@ -170,7 +170,7 @@ class Planner:
             # [MODIFIED] Dynamic Size Loading Loop for Explicit Load
             possible_sizes = ['tiny', 'small', 'medium', 'large', 'enormous', 'tectonic']
             
-            is_discrete = 'discrete' in os.path.basename(model_path).lower()
+            is_discrete = 'discrete' in os.path.basename(model_path).lower() and 'cve' not in os.path.basename(model_path).lower()
             possible_input_dims = [512] if is_discrete else [32] 
             
             loaded_policy = None
@@ -274,8 +274,8 @@ class Planner:
                         loaded_ok = True
                         break
                         
-                    except RuntimeError as e:
-                        logging.error(f"Size {size} failed: {e}")
+                    except Exception as e:
+                        logging.debug(f"Size {size} failed: {e}")
             
             if loaded_ok:
                 self.policy = loaded_policy
@@ -358,7 +358,7 @@ class Planner:
 
                      # [NEW] Dynamic Size Loading Loop
                      possible_sizes = ['tiny', 'small', 'medium', 'large', 'enormous', 'tectonic']
-                     is_discrete = 'discrete' in os.path.basename(path).lower()
+                     is_discrete = 'discrete' in os.path.basename(path).lower() and 'cve' not in os.path.basename(path).lower()
                      possible_input_dims = [512] if is_discrete else [32]
                      loaded_ok = False
                      
@@ -400,7 +400,7 @@ class Planner:
                                 break
                                 
                             except RuntimeError as e:
-                                logging.error(f"Size {size} failed: {e}")
+                                logging.debug(f"Size {size} failed: {e}")
                         if loaded_ok: break
                               
                      if loaded_ok:
@@ -418,7 +418,7 @@ class Planner:
         return final_policy
 
 
-    def decide(self, z_current, state_vec=None, dist_threshold=None, continuous_z=None, img=None):
+    def decide(self, z_current, state_vec=None, dist_threshold=None, continuous_z=None, img=None, distance_override=None):
         """
         Input: z_current (32 or 512,) Latent, state_vec (3,) Explicit State
                continuous_z: Optional 32-dim continuous embedding for distance calc (discrete VQ-VAE)
@@ -477,12 +477,12 @@ class Planner:
             continuous_goal = getattr(self, 'continuous_goal', None)
             if continuous_z is not None and continuous_goal is not None:
                 # Both current and goal are in continuous pre-quantized space (32-dim)
-                distance = float(np.linalg.norm(continuous_z - continuous_goal))
+                distance = distance_override if distance_override is not None else float(np.linalg.norm(continuous_z - continuous_goal))
             else:
                 # Continuous VAE path: z_smoothed and z_goal are in the same space
                 vision_dim = z_goal.shape[-1]
                 vision_dist = self.z_smoothed[:vision_dim]
-                distance = float(np.linalg.norm(vision_dist - z_goal))
+                distance = distance_override if distance_override is not None else float(np.linalg.norm(vision_dist - z_goal))
         else:
             distance = 10.0
         

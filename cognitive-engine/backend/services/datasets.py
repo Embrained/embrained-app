@@ -279,6 +279,18 @@ class DatasetService:
                 base = os.path.basename(v).lower()
                 if not any(x in base for x in ["cql", "latentslam", "control", "model", "policy"]):
                     vae_files.append(v)
+            # Also discover CVE models
+            all_cve_files = []
+            if path:
+                all_cve_files.extend(glob.glob(os.path.join(d, "*cve*.pth")))
+                all_cve_files.extend(glob.glob(os.path.join(d, "*", "*cve*.pth")))
+            else:
+                all_cve_files.extend(glob.glob(os.path.join(d, "**", "*cve*.pth"), recursive=True))
+                
+            for v in all_cve_files:
+                base = os.path.basename(v).lower()
+                if not any(x in base for x in ["cql", "latentslam", "control", "model", "policy"]):
+                    vae_files.append(v)
         
         # 3. SLAM Models
         slam_files = []

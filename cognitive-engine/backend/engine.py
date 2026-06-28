@@ -136,6 +136,8 @@ class CognitiveEngine:
             # Initialize with Defaults (Random Weights)
             logging.debug("Initializing VisionSystem...")
             self.vision = VisionSystem(device=self.device, model_path=None)
+            self.bg_vision = VisionSystem(device=self.device, model_path=None)
+            self.state_manager.update('controller', None)
             logging.debug("VisionSystem Initialized.")
 
             # logging.debug("Refreshing Goal Latents...")
@@ -146,7 +148,9 @@ class CognitiveEngine:
             self.planner = Planner(device=self.device, model_path=None)
             self.explorer = ExplorationSystem() 
             self.cql_controller = MarkovWASD() # NEW CQL PACER
-            self.manifold = ManifoldService(self.vision)
+            self.manifold = None
+            self.bg_manifold = ManifoldService(self.bg_vision)
+            self.policy_manifold = ManifoldService(self.vision)
             logging.debug("Initializing LatentSLAMService...")
             self.latent_slam_service = LatentSLAMService()
             logging.debug("LatentSLAMService Initialized.")
@@ -271,33 +275,83 @@ class CognitiveEngine:
             self.stop_threshold = STOP_DISTANCE_THRESHOLD
             logging.info(f"Auto-adjusted stop threshold to {self.stop_threshold} for {model_name}")
 
-    def load_vae_model(self, model_filename):
-        """Switches the Vision System VAE via ModelManager lookups."""
-        logging.debug(f"Attempting to switch VAE to: {model_filename}")
-        
-        # [NEW] Check for Ground Truth Mode Before ModelManager Lookup
+
+    def load_bg_vision_model(self, model_filename):
+        logging.debug(f"Attempting to switch Background VAE to: {model_filename}")
         if model_filename == "master_telemetry.csv":
-            logging.info("Ground Truth Mode explicitly activated by user. Bypassing Neural Vision.")
-            self.vision.enable_groundtruth(True)
+            self.bg_vision.enable_groundtruth(True)
             self.state_manager.update('bvae_model', "master_telemetry.csv")
             return True
         else:
-            self.vision.enable_groundtruth(False)
-        
+            self.bg_vision.enable_groundtruth(False)
+            
         path = self.model_manager.find_best_model(model_filename)
-        
         if not path:
-             logging.error(f"Could not find VAE model: {model_filename}")
              return False
+             
+        logging.info(f"Loading Background VAE from: {path}")
+        if self.bg_vision.load_model(path):
+             if self.bg_manifold:
+                 self.bg_manifold.set_model_name(model_filename, model_path=path)
+                 self.bg_manifold.is_ready = False
+                 self.bg_manifold.start_background_fit(force=False)
+             self.state_manager.update('bvae_model', model_filename)
+             self._update_bg_vision_goals()
+             return True
+        return False
+        
+    def _update_bg_vision_goals(self):
+        import glob
+        from config import DATA_DIR
+        goal_dir = os.path.join(DATA_DIR, "goals")
+        imgs = glob.glob(os.path.join(goal_dir, "*.jpg")) + glob.glob(os.path.join(goal_dir, "*.png"))
+        if not imgs:
+            self.bg_vision.continuous_goal = None
+            return
+            
+        latents = []
+        for img_path in imgs:
+            frame = cv2.imread(img_path)
+            if frame is not None:
+                _, z = self.bg_vision.process_frame(frame)
+                latents.append(z)
+                
+        if latents:
+            latents_arr = np.array([z.squeeze() for z in latents])
+            self.bg_vision.continuous_goal = np.mean(latents_arr, axis=0)
+            logging.info(f"Computed background VAE goal centroid from {len(latents)} images.")
+
+    def load_vae_model(self, model_filename):
+        logging.debug(f"Attempting to switch Policy VAE to: {model_filename}")
+        if model_filename == "master_telemetry.csv":
+            self.vision.enable_groundtruth(True)
+            return True
+        else:
+            self.vision.enable_groundtruth(False)
+            
+        path = self.model_manager.find_best_model(model_filename)
+        if not path:
+             return False
+        logging.info(f"Loading Policy VAE from: {path}")
+        if self.vision.load_model(path):
+             if self.policy_manifold:
+                 self.policy_manifold.set_model_name(model_filename, model_path=path)
+                 self.policy_manifold.is_ready = False
+                 self.policy_manifold.start_background_fit(force=False)
+             self._auto_adjust_threshold_for_model(model_filename)
+             self._refresh_goal_latents()
+             return True
+        return False
+
              
         logging.info(f"Loading VAE from: {path}")
         
         if self.vision.load_model(path):
              logging.debug("Reloading Manifold for new VAE...")
-             if self.manifold:
-                 self.manifold.set_model_name(model_filename, model_path=path)
-                 self.manifold.is_ready = False
-                 self.manifold.start_background_fit(force=False)
+             if self.bg_manifold:
+                 self.bg_manifold.set_model_name(model_filename, model_path=path)
+                 self.bg_manifold.is_ready = False
+                 self.bg_manifold.start_background_fit(force=False)
              # [NEW] Update State for UI
              self.state_manager.update('bvae_model', model_filename)
              self._auto_adjust_threshold_for_model(model_filename)
@@ -344,14 +398,25 @@ class CognitiveEngine:
                             vae_candidate += ".pth"
                             
                     # 3. Only switch if it's different from current
-                    current_vae = self.state.get('bvae_model', '')
+                    current_vae = self.state.get('policy_model', '') # We are using VCE as policy vision
                     if vae_candidate != current_vae:
-                         logging.debug(f"Auto-switching VAE to {vae_candidate} for policy {model_filename}")
+                         logging.debug(f"Auto-switching Policy Vision to {vae_candidate} for policy {model_filename}")
                          success = self.load_vae_model(vae_candidate)
                          if not success:
-                             logging.warning(f"Could not auto-load VAE {vae_candidate}. Manifold might be mismatched.")
+                             logging.warning(f"Could not auto-load Policy Vision {vae_candidate}. Manifold might be mismatched.")
                          if hasattr(self, 'vision') and self.vision:
                              self.vision.groundtruth_mode = False
+                             
+                         # [NEW] Also try to load the paired Background VAE
+                         if "cve_32d_" in vae_candidate:
+                             # Extract full timestamp e.g. "20260626_211623"
+                             timestamp = vae_candidate.replace('cve_32d_', '').replace('.pth', '')
+                             bg_vae_candidate = f"tinyvae-vae_{timestamp}.pth"
+                             logging.debug(f"Auto-switching Background VAE to {bg_vae_candidate}")
+                             bg_success = self.load_bg_vision_model(bg_vae_candidate)
+                             if not bg_success:
+                                 logging.warning(f"Could not auto-load Background VAE {bg_vae_candidate}.")
+                                 
             except Exception as e:
                 logging.error(f"Error checking VAE for policy: {e}")
 
@@ -511,9 +576,7 @@ class CognitiveEngine:
         vae_model_name = self.state.get("bvae_model", None)
         if vae_model_name == "N/A":
             vae_model_name = None
-            
-        if not vae_model_name and hasattr(self, 'active_model_path') and self.active_model_path:
-            # Fallback if state not explicitly set but a path is active
+        if hasattr(self, 'active_model_path') and self.active_model_path:
             filename = os.path.basename(self.active_model_path)
             if "-dark-wall-cql_" in filename:
                 vae_model_name = filename.split("-dark-wall-cql_")[0] + ".pth"
@@ -527,6 +590,9 @@ class CognitiveEngine:
                 vae_model_name = filename.split("-cql_")[0] + ".pth"
             else:
                 vae_model_name = filename
+                
+        if not vae_model_name:
+            vae_model_name = getattr(self, 'bvae_model_name', None)
                 
         if vae_model_name and vae_model_name != "N/A":
             vae_base = vae_model_name.replace(".pth", "")
@@ -680,8 +746,10 @@ class CognitiveEngine:
                 self.new_telemetry_goals.append(t_goal)
                 
                 z = None
+                bg_z = None
                 if img_name in precomputed_goals:
                     z = precomputed_goals[img_name]
+                    # Note: Precomputed goals only have policy latents, so bg_z will remain None
                 elif getattr(self.vision, 'groundtruth_mode', False):
                     z = t_goal
                     if np.any(z):
@@ -691,34 +759,48 @@ class CognitiveEngine:
                 else:
                     with open(full_path, 'rb') as f:
                         data = f.read()
-                    _, z = self.vision.process_frame(data)
+                    if hasattr(self, 'vision') and self.vision:
+                        _, z = self.vision.process_frame(data)
+                    if hasattr(self, 'bg_vision') and self.bg_vision:
+                        _, bg_z = self.bg_vision.process_frame(data)
                 
+                active_manifold = self.bg_manifold if self.bg_manifold and self.bg_manifold.is_ready else self.policy_manifold
+
                 # Capture continuous embedding for discrete VQ-VAE (used for distance + manifold)
-                continuous_goal_z = getattr(self.vision, 'last_continuous_z', None)
+                if active_manifold == self.bg_manifold:
+                    continuous_goal_z = getattr(self.bg_vision, 'last_continuous_z', None)
+                else:
+                    continuous_goal_z = getattr(self.vision, 'last_continuous_z', None)
+                
                 if continuous_goal_z is not None:
                     continuous_goal_z = continuous_goal_z.copy()
                 
                 # 3. Manifold Projection (Cache or Live)
                 coord = None
-                if hasattr(self, 'manifold') and self.manifold and self.manifold.is_ready:
-                    pca_dim = getattr(self.manifold.pca, 'n_features_in_', 32) if hasattr(self.manifold, 'pca') else 32
+                if active_manifold and active_manifold.is_ready:
+                    pca_dim = getattr(active_manifold.pca, 'n_features_in_', 32) if hasattr(active_manifold, 'pca') else 32
                     
-                    if full_path in self.manifold.library_paths and not (slam_z is not None and pca_dim > 64):
+                    if full_path in active_manifold.library_paths and not (slam_z is not None and pca_dim > 64):
                         # Use purely cached point only if we aren't overriding it with a high-dim SLAM generation
-                        idx = self.manifold.library_paths.index(full_path)
-                        coord = self.manifold.manifold_points[idx]
+                        idx = active_manifold.library_paths.index(full_path)
+                        coord = active_manifold.manifold_points[idx]
                     else:
                         # Prefer continuous embedding for manifold projection (matches PCA dimensionality)
-                        pca_dim = getattr(self.manifold.pca, 'n_features_in_', 32) if hasattr(self.manifold, 'pca') else 32
+                        pca_dim = getattr(active_manifold.pca, 'n_features_in_', 32) if hasattr(active_manifold, 'pca') else 32
                         if continuous_goal_z is not None and continuous_goal_z.shape[0] == pca_dim:
                             target_z = continuous_goal_z
                         else:
                             target_z = slam_z if (slam_z is not None and pca_dim > 64) else z
                         if target_z is not None:
-                            coord = self.manifold.project(target_z)
+                            coord = active_manifold.project(target_z)
                             
-                if z is not None:
-                    new_latents.append(z)
+                if z is not None or bg_z is not None:
+                    new_latents.append({
+                        'z': z, 
+                        'bg_z': bg_z,
+                        'continuous_z': continuous_goal_z,
+                        'bg_continuous_z': getattr(self.bg_vision, 'last_continuous_z', None) if hasattr(self, 'bg_vision') else None
+                    })
                 if coord is not None:
                     new_coords.append(coord)
                 if slam_z is not None:
@@ -730,20 +812,24 @@ class CognitiveEngine:
                 logging.info(f"Successfully processed {num_processed} goals (cached & live).")
                 
                 if hasattr(self, 'planner'):
-                    self.planner.goals = [{'latent': z} for z in new_latents]
+                    self.planner.goals = [{'latent': d['z'], 'bg_latent': d['bg_z']} for d in new_latents]
                     for i, g in enumerate(new_rgbs):
                         if i < len(self.planner.goals):
                             self.planner.goals[i]['img'] = g
-                    if hasattr(self.planner, 'latent_buffer'):
+                    if hasattr(self, 'latent_buffer'):
                         self.planner.latent_buffer.clear() # Clear framestack on new goal
                     self.planner.current_goal_idx = 0
                     self.planner.last_goal_switch = time.time()
                     self.cql_eval_new_goal_pending = True
                     
                     # Store continuous goal for distance computation (discrete VQ-VAE)
-                    if continuous_goal_z is not None:
-                        self.planner.continuous_goal = continuous_goal_z
-                        logging.info(f"Stored continuous goal embedding (dim={continuous_goal_z.shape[0]}) for distance computation.")
+                    if new_latents and new_latents[0].get('continuous_z') is not None:
+                        self.planner.continuous_goal = new_latents[0]['continuous_z']
+                        logging.info(f"Stored continuous goal embedding for distance computation.")
+                    
+                    if hasattr(self, 'bg_vision') and self.bg_vision:
+                        if new_latents and new_latents[0].get('bg_continuous_z') is not None:
+                            self.bg_vision.continuous_goal = new_latents[0]['bg_continuous_z']
                     
                 self.goal_imgs_b64 = new_b64s
                 
@@ -757,7 +843,7 @@ class CognitiveEngine:
                     if new_b64s:
                         self.state['goal_image'] = new_b64s[0]
                     
-                    self.state['goal_latents'] = [zl.tolist() if isinstance(zl, np.ndarray) else zl for zl in new_latents]
+                    self.state['goal_latents'] = [zl['z'].tolist() if isinstance(zl['z'], np.ndarray) else zl['z'] for zl in new_latents]
                     
                     if hasattr(self, 'new_telemetry_goals'):
                         self.state['telemetry_goal_coords'] = [g.tolist() if isinstance(g, np.ndarray) else g for g in self.new_telemetry_goals]
@@ -1039,21 +1125,21 @@ class CognitiveEngine:
     def _sense(self):
         if self.is_simulation:
             if not hasattr(self, 'sim') or self.sim is None:
-                return None, None, None
+                return None, None, None, None
             frame = self.sim.get_latest_frame()
             webcam_frame = None
         else:
             if not hasattr(self, 'comms') or self.comms is None:
                  if self.dry_run or self.state['mode'] != 'LIVE':
                      img = np.zeros((RECORD_H, RECORD_W, 3), dtype=np.uint8)
-                     return img, None, None
-                 return None, None, None
+                     return img, None, None, None
+                 return None, None, None, None
                  
             frame = self.comms.get_latest_frame()
             webcam_frame = self.comms.get_latest_webcam_frame() if hasattr(self.comms, 'get_latest_webcam_frame') else None
         
         if frame is None and not self.dry_run:
-            return None, None, None
+            return None, None, None, None
 
         frame_to_process = frame
         if self.dry_run and frame is None:
@@ -1061,18 +1147,18 @@ class CognitiveEngine:
         
         # [MODIFIED] Use LatentSLAM for z_cur if active
         z_cur = None
+        bg_z_cur = None
         img = None
         if hasattr(self, 'slam_inference') and self.slam_inference:
-             # LatentSLAM gets the raw frame (BGR) and normalizes it.
-             # We need last_action sent
              last_action = getattr(self.comms, 'last_action_pwm', (0,0)) if hasattr(self, 'comms') and self.comms else (0,0)
              z_cur = self.slam_inference.get_latent_state(frame_to_process, last_action)
-             # VAE encoding for UI image (optional, we could just return the raw frame)
              img, _ = self.vision.process_frame(frame_to_process, webcam_input=webcam_frame)
         else:
              img, z_cur = self.vision.process_frame(frame_to_process, webcam_input=webcam_frame)
+             _, bg_z_cur = self.bg_vision.process_frame(frame_to_process, webcam_input=webcam_frame)
              
-        return img, z_cur, webcam_frame
+        return img, z_cur, bg_z_cur, webcam_frame
+
 
     def _extract_explicit_state(self, last_action_sent):
         curr_l, curr_r = 0.0, 0.0
@@ -1102,12 +1188,12 @@ class CognitiveEngine:
         state_vec = np.array([action_norm, dist_norm], dtype=np.float32)
         return state_vec, curr_sonar
 
-    def _decide_cql_policy(self, z_cur, state_vec, curr_sonar, img=None):
+    def _decide_cql_policy(self, z_cur, state_vec, curr_sonar, img=None, distance_override=None):
         # We must call planner.decide every frame to maintain the VAE optical flow buffer (z_smoothed)
         # Pass continuous embedding for accurate distance computation with discrete architectures
-        continuous_z = getattr(self.vision, 'last_continuous_z', None)
+        continuous_z = self.bg_vision.last_continuous_z if (hasattr(self, 'bg_vision') and self.bg_vision and self.bg_vision.last_continuous_z is not None) else (self.vision.last_continuous_z if (hasattr(self, 'vision') and self.vision and self.vision.last_continuous_z is not None) else None)
         action, dist, eff_thresh, goal_idx, active_goal_dict, reflex_triggered = self.planner.decide(
-            z_cur, state_vec=state_vec, dist_threshold=self.stop_threshold, continuous_z=continuous_z, img=img
+            z_cur, state_vec=state_vec, dist_threshold=self.stop_threshold, continuous_z=continuous_z, img=img, distance_override=distance_override
         )
         
         prev_state = getattr(self.cql_controller, 'state', None)
@@ -1257,24 +1343,26 @@ class CognitiveEngine:
         return target_action, is_bout_start
 
     def _project_manifold(self, z_cur):
-        if self.manifold:
-            latent_to_project = None
-            # Prefer continuous embedding for discrete VQ-VAE architectures
-            # (one-hot z_cur would fail the PCA dimension check)
-            continuous_z = getattr(self.vision, 'last_continuous_z', None)
-            if continuous_z is not None:
-                latent_to_project = continuous_z
-            elif z_cur is not None:
-                latent_to_project = z_cur
-            elif getattr(self, 'dreamer_ctrl', None) and self.dreamer_ctrl.last_latent is not None:
-                latent_to_project = self.dreamer_ctrl.last_latent
+        active_manifold = self.bg_manifold if self.bg_manifold and self.bg_manifold.is_ready else self.policy_manifold
+        
+        if active_manifold:
+            # Use explicit None checks — getattr fallback doesn't work when attr exists but is None
+            bg_z = self.bg_vision.last_continuous_z if (hasattr(self, 'bg_vision') and self.bg_vision) else None
+            vis_z = self.vision.last_continuous_z if (hasattr(self, 'vision') and self.vision) else None
+            
+            if active_manifold == self.bg_manifold:
+                 latent_to_project = bg_z if bg_z is not None else (vis_z if vis_z is not None else z_cur)
+            else:
+                 latent_to_project = vis_z if vis_z is not None else (bg_z if bg_z is not None else z_cur)
+                 if latent_to_project is None and getattr(self, 'dreamer_ctrl', None) and self.dreamer_ctrl.last_latent is not None:
+                     latent_to_project = self.dreamer_ctrl.last_latent
             
             if latent_to_project is not None:
-                pca_dim = getattr(self.manifold.pca, 'n_features_in_', 32) if hasattr(self.manifold, 'pca') else 32
+                pca_dim = getattr(active_manifold.pca, 'n_features_in_', 32) if hasattr(active_manifold, 'pca') else 32
                 if isinstance(latent_to_project, np.ndarray) and latent_to_project.shape[0] > pca_dim:
                     latent_to_project = latent_to_project[:pca_dim]
                     
-                coords = self.manifold.project(latent_to_project)
+                coords = active_manifold.project(latent_to_project)
                 with self.state_lock:
                     self.state['manifold_coord'] = coords if coords else None
             else:
@@ -1283,29 +1371,33 @@ class CognitiveEngine:
                     
             m_name = getattr(self.planner, 'model_name', '') if hasattr(self, 'planner') else ''
             fallback_latent = None
-            if m_name and ('group-goal' in m_name or 'group_goal' in m_name or 'fixed_goal' in m_name or 'discrete_cql' in m_name):
-                # Prefer continuous goal embedding for discrete architectures (matches PCA dim)
-                if hasattr(self, 'planner'):
-                    continuous_goal = getattr(self.planner, 'continuous_goal', None)
-                    if continuous_goal is not None:
-                        fallback_latent = continuous_goal
-                    else:
-                        fallback_latent = getattr(self.planner, 'mu_goal', None)
-            elif getattr(self, 'explorer', None) and self.explorer.current_algo == "Neural Oracle":
-                n_oracle = getattr(self.explorer, 'neural_oracle', None)
-                if n_oracle: fallback_latent = getattr(n_oracle, 'goal_latent', None)
+            
+            if active_manifold == self.bg_manifold:
+                fallback_latent = getattr(self.bg_vision, 'continuous_goal', None)
+            else:
+                if m_name and ('group-goal' in m_name or 'group_goal' in m_name or 'fixed_goal' in m_name or 'discrete_cql' in m_name):
+                    # Prefer continuous goal embedding for discrete architectures (matches PCA dim)
+                    if hasattr(self, 'planner'):
+                        continuous_goal = getattr(self.planner, 'continuous_goal', None)
+                        if continuous_goal is not None:
+                            fallback_latent = continuous_goal
+                        else:
+                            fallback_latent = getattr(self.planner, 'mu_goal', None)
+                elif getattr(self, 'explorer', None) and self.explorer.current_algo == "Neural Oracle":
+                    n_oracle = getattr(self.explorer, 'neural_oracle', None)
+                    if n_oracle: fallback_latent = getattr(n_oracle, 'goal_latent', None)
                 
             if fallback_latent is not None:
                 with self.state_lock:
                     if not self.state.get('goal_manifold_coords'):
                         if hasattr(fallback_latent, 'detach'):
                             fallback_latent = fallback_latent.detach().cpu().numpy().squeeze()
-                        c_coord = self.manifold.project(fallback_latent)
+                        c_coord = active_manifold.project(fallback_latent)
                         if c_coord:
                             self.state['goal_manifold_coords'] = [c_coord]
                             self.state['goal_idx'] = 0
 
-    def _decide(self, current_mode, z_cur, img=None, last_action_sent=(0, 0), telemetry_cur=None):
+    def _decide(self, current_mode, z_cur, img=None, last_action_sent=(0, 0), telemetry_cur=None, distance_override=None):
         target_action = 0 
         dist = 0.0
         goal_idx = 0
@@ -1318,13 +1410,13 @@ class CognitiveEngine:
         
         if self.active_model_name and self.planner and not is_latentslam_active and not getattr(self, 'telemetry_warmup_active', False):
              if z_cur is not None or "e2e" in self.active_model_name.lower():
-                 target_action, dist, goal_idx, reflex_triggered, is_bout_start = self._decide_cql_policy(z_cur, state_vec, curr_sonar, img=img)
+                 target_action, dist, goal_idx, reflex_triggered, is_bout_start = self._decide_cql_policy(z_cur, state_vec, curr_sonar, img=img, distance_override=distance_override)
         elif is_latentslam_active:
              if z_cur is not None:
                  target_action, dist = self._decide_latent_slam(z_cur, curr_sonar)
         else:
              # Compute continuous distance even in teleop/exploration mode
-             continuous_z = getattr(self.vision, 'last_continuous_z', None) if hasattr(self, 'vision') else None
+             continuous_z = (self.bg_vision.last_continuous_z if (hasattr(self, 'bg_vision') and self.bg_vision and self.bg_vision.last_continuous_z is not None) else (self.vision.last_continuous_z if (hasattr(self, 'vision') and self.vision and self.vision.last_continuous_z is not None) else None))
              continuous_goal = getattr(self.planner, 'continuous_goal', None) if hasattr(self, 'planner') else None
              if continuous_z is not None and continuous_goal is not None:
                  dist = float(np.linalg.norm(continuous_z - continuous_goal))
@@ -1667,7 +1759,7 @@ class CognitiveEngine:
                         c_type, c_load = self.command_queue.pop(0)
                         self.dispatcher.dispatch(c_type, c_load)
 
-                img, z_cur, webcam_img = self._sense()
+                img, z_cur, bg_z_cur, webcam_img = self._sense()
                 if img is not None:
                     current_mode = self.state['mode']
                     
@@ -1753,7 +1845,23 @@ class CognitiveEngine:
                             z_cur = np.concatenate([z_cur.flatten(), np.zeros(4, dtype=np.float32)])
                     
                     # Decide on action only if z_cur is available
-                    target_action, dist, goal_idx, reflex_triggered, is_bout_start = self._decide(current_mode, z_cur, img, last_action_sent, telemetry_cur=telemetry_cur)
+                    # Explicit Distance Calculation based on Threshold Space
+                    distance_override = None
+                    bg_goal = None
+                    if hasattr(self, 'planner') and hasattr(self.planner, 'goals') and len(self.planner.goals) > getattr(self.planner, 'current_goal_idx', 0):
+                            bg_goal = self.planner.goals[self.planner.current_goal_idx].get('bg_latent')
+                    if bg_goal is None:
+                            bg_goal = getattr(self.bg_vision, 'continuous_goal', None)
+                    
+                    if bg_z_cur is not None and bg_goal is not None:
+                        distance_override = float(np.linalg.norm(bg_z_cur.squeeze() - bg_goal))
+                    else:
+                        policy_goal = getattr(self.planner, 'continuous_goal', None)
+                        policy_z = self.vision.last_continuous_z if (hasattr(self, 'vision') and self.vision and self.vision.last_continuous_z is not None) else None
+                        if policy_z is not None and policy_goal is not None:
+                            distance_override = float(np.linalg.norm(policy_z.squeeze() - policy_goal))
+                            
+                    target_action, dist, goal_idx, reflex_triggered, is_bout_start = self._decide(current_mode, z_cur, img, last_action_sent, telemetry_cur=telemetry_cur, distance_override=distance_override)
                     
                     # --- Model Control Evaluation Logic ---
                     is_model_driving = (self.active_model_name is not None and current_mode in ['LIVE', 'INFERENCE'])

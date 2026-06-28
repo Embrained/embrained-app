@@ -12,3 +12,4 @@ requests
 datasets
 pandas
 seaborn
+scipy

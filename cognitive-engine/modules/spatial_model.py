@@ -35,8 +35,11 @@ class TinyVAE(nn.Module):
             fc_weight_shape = state_dict['fc_mu.weight'].shape
         elif 'fc_e.weight' in state_dict:
             fc_weight_shape = state_dict['fc_e.weight'].shape
+        elif 'projection.weight' in state_dict:
+            # Contrastive Visuomotor Encoder (CVE)
+            fc_weight_shape = state_dict['projection.weight'].shape
         else:
-            raise KeyError("Neither 'fc_mu.weight' nor 'fc_e.weight' found in state_dict")
+            raise KeyError("Neither 'fc_mu.weight', 'fc_e.weight', nor 'projection.weight' found in state_dict")
             
         latent_dim = fc_weight_shape[0]
         flatten_dim = fc_weight_shape[1]
@@ -287,6 +290,96 @@ class DiscreteVQVAE(TinyVAE):
         
         recon = self.decoder(self.decoder_input(quantized))
         return recon, z_e, quantized, vq_loss, perplexity
+
+
+class ContrastiveVisuomotorEncoder(nn.Module):
+    """
+    Contrastive Visuomotor Embedding (CVE).
+    
+    Learns navigation-aligned representations via:
+    1. InfoNCE contrastive loss (temporal proximity = similarity)
+    2. Action prediction from latent transition vectors
+    3. Augmentation invariance (filters TV content, lighting changes)
+    
+    Reuses the TinyVAE encoder backbone for weight/architecture compatibility.
+    Output: 32-dim continuous embedding (compatible with CQL policy pipeline).
+    """
+    def __init__(self, latent_dim=32, model_size='large', input_spatial_dim=64, in_channels=3, n_actions=4):
+        super(ContrastiveVisuomotorEncoder, self).__init__()
+        
+        self.latent_dim = latent_dim
+        self.n_actions = n_actions
+        self.model_size = model_size
+        self.input_spatial_dim = input_spatial_dim
+        self.in_channels = in_channels
+        
+        # Build encoder using TinyVAE's architecture (reuse exact conv stack)
+        _helper = TinyVAE(latent_dim=latent_dim, model_size=model_size, 
+                          input_spatial_dim=input_spatial_dim, in_channels=in_channels)
+        self.encoder = _helper.encoder
+        self.flatten_dim = _helper.flatten_dim
+        
+        # Projection: flatten_dim -> latent_dim (same role as fc_e in VQ-VAE)
+        self.projection = nn.Linear(self.flatten_dim, latent_dim)
+        
+        # Contrastive projection head (maps to unit sphere for cosine similarity)
+        self.contrastive_head = nn.Sequential(
+            nn.Linear(latent_dim, latent_dim),
+            nn.ReLU(),
+            nn.Linear(latent_dim, latent_dim)
+        )
+        
+        # Action predictor: predict action from (z_t, z_{t+1}) concatenation
+        self.action_predictor = nn.Sequential(
+            nn.Linear(latent_dim * 2, 128),
+            nn.ReLU(),
+            nn.Linear(128, n_actions)
+        )
+    
+    def encode(self, x):
+        """Encode image to latent embedding.
+        
+        Args:
+            x: (B, C, H, W) input tensor
+        Returns:
+            z: (B, latent_dim) continuous embedding
+        """
+        features = self.encoder(x)
+        z = self.projection(features)
+        return z
+    
+    def project(self, z):
+        """Project embedding to contrastive space (unit sphere).
+        
+        Args:
+            z: (B, latent_dim) embedding
+        Returns:
+            z_proj: (B, latent_dim) L2-normalized projection
+        """
+        z_proj = self.contrastive_head(z)
+        return F.normalize(z_proj, dim=-1)
+    
+    def predict_action(self, z_t, z_tp1):
+        """Predict action taken between two consecutive states.
+        
+        Args:
+            z_t: (B, latent_dim) current state embedding
+            z_tp1: (B, latent_dim) next state embedding
+        Returns:
+            logits: (B, n_actions) action prediction logits
+        """
+        z_cat = torch.cat([z_t, z_tp1], dim=-1)
+        return self.action_predictor(z_cat)
+    
+    def forward(self, x):
+        """Full forward pass (used during inference, returns tuple for compatibility).
+        
+        Returns (z, z, None, zero_loss, zero_perp) to match VQ-VAE output shape
+        for export_global_latents compatibility.
+        """
+        z = self.encode(x)
+        zero = torch.tensor(0.0, device=x.device)
+        return None, z, None, zero, zero
 
 
 class OracleQNetwork(nn.Module):

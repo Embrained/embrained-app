@@ -392,6 +392,9 @@ class SpatialCQLDataset(Dataset):
                 imgs = torch.stack([self._load_img(n) for n in batch_nodes]).to(device)
                 if hasattr(encoder, 'vq'):
                     _, _, mus, _, _ = encoder(imgs)
+                elif hasattr(encoder, 'action_predictor'):
+                    # Contrastive Visuomotor Encoder (CVE)
+                    mus = encoder.encode(imgs)
                 else:
                     feats = encoder.encoder(imgs)
                     mus = encoder.fc_mu(feats)
@@ -400,7 +403,7 @@ class SpatialCQLDataset(Dataset):
                     
         self.use_precomputed = True
         
-        # [NEW] Precompute Group Goal Stats
+        # Load goal centroid for group_goal (CVE distance-shaped rewards)
         if self.goal_type == 'group_goal':
             import json
             stats_path = os.path.join(self.data_root, 'goals', 'group_stats.json')
@@ -408,15 +411,15 @@ class SpatialCQLDataset(Dataset):
                 try:
                     with open(stats_path, 'r') as f:
                         stats = json.load(f)
-                    self.group_centroid = torch.tensor(stats['centroid'], device=device, dtype=torch.float)
-                    self.group_avg_dist = stats['average_in_group_distance']
-                    logger.info(f"Loaded Group Goal centroid. In-group avg dist: {self.group_avg_dist:.4f}")
+                    self.goal_latent = torch.tensor(stats['centroid'], device=device, dtype=torch.float)
+                    num_goals = stats.get('num_goals', 1)
+                    logger.info(f"Loaded goal centroid from {num_goals} curated goal images")
                 except Exception as e:
                     logger.error(f"Failed to load group_stats.json: {e}")
-                    self.group_centroid = None
+                    self.goal_latent = None
             else:
                 logger.error("group_stats.json not found. Group Goal logic will fail!")
-                self.group_centroid = None
+                self.goal_latent = None
                 
         # [NEW] Precompute Discrete Exact Stats
         if self.goal_type == 'discrete_exact':
@@ -459,30 +462,18 @@ class SpatialCQLDataset(Dataset):
         state_curr_stack = torch.cat([self._extract_state(n, action_id=a) for n, a in zip(sample['curr_nodes'], sample['curr_actions'])], dim=0)
         state_next_stack = torch.cat([self._extract_state(n, action_id=a) for n, a in zip(sample['next_nodes'], sample['next_actions'])], dim=0)
 
-        # Dynamic Override for Group Goal
+        # Dynamic Override for Group Goal (single goal image)
         final_reward = torch.tensor(sample['reward'], dtype=torch.float)
         final_done = torch.tensor(sample['done'], dtype=torch.float)
         
         final_action = sample['action']
-        if getattr(self, 'goal_type', None) == 'group_goal' and getattr(self, 'group_centroid', None) is not None:
-            # Distance of the most recent latent frame to the group centroid
-            latest_latent = latent_next_stack[-1] # Usually stacked 3 frames, last one is current
-            
-            # Slice to match the centroid's dimension (e.g. 32), ignoring any injected trajectory telemetry
-            vision_dim = self.group_centroid.shape[-1]
-            vision_latest_latent = latest_latent[:vision_dim]
-            
-            if vision_latest_latent.dim() == 1:
-                dist = torch.norm(vision_latest_latent.to(self.group_centroid.device) - self.group_centroid)
-            else:
-                dist = torch.norm(vision_latest_latent.view(-1).to(self.group_centroid.device) - self.group_centroid)
-                
-            if dist < (self.group_avg_dist * 1.1):
-                final_reward = torch.tensor(50.0, dtype=torch.float)
+        if getattr(self, 'goal_type', None) == 'group_goal' and getattr(self, 'terminal_indices_set', None) is not None:
+            if idx in self.terminal_indices_set:
+                final_reward = torch.tensor(1.0, dtype=torch.float)
                 final_done = torch.tensor(1.0, dtype=torch.float)
-                final_action = 5 # Force STOP action at goal
+                final_action = 5  # STOP at goal
             else:
-                final_reward = torch.tensor(-0.01, dtype=torch.float)
+                final_reward = torch.tensor(0.0, dtype=torch.float)
                 final_done = torch.tensor(0.0, dtype=torch.float)
 
         if getattr(self, 'goal_type', None) == 'discrete_exact' and getattr(self, 'exact_latent', None) is not None:
@@ -664,18 +655,24 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
         # Load Pretrained VAE Weights
         # vae_path is already partially resolved above, but check if we need to auto-discover
         if not vae_path and not train_from_scratch:
-            # Fallback to auto-discovery if explicit name failed or wasn't provided
-            parent_name = os.path.basename(os.path.normpath(data_root))
-            if not parent_name or parent_name == 'data' or parent_name == '.':
-                prefix = ""
-            else:
-                prefix = f"{parent_name}_"
+            import glob
+            # Fallback to auto-discovery: search for the latest VAE model in data_root or models dir
+            candidates = glob.glob(os.path.join(data_root, "*-vae_*.pth")) + \
+                         glob.glob(os.path.join(MODELS_DIR, "*-vae_*.pth")) + \
+                         glob.glob(os.path.join(data_root, "vqvae_*.pth")) + \
+                         glob.glob(os.path.join(MODELS_DIR, "vqvae_*.pth")) + \
+                         glob.glob(os.path.join(data_root, "cve_*.pth")) + \
+                         glob.glob(os.path.join(MODELS_DIR, "cve_*.pth"))
+            if not candidates:
+                candidates = [os.path.join(data_root, "tiny_vae_final.pth"), os.path.join(MODELS_DIR, "tiny_vae_final.pth")]
                 
-            possible_new = os.path.join(MODELS_DIR, f"{parent_name}-vae.pth")
-            if os.path.exists(possible_new):
-                 vae_path = possible_new
+            candidates = [c for c in candidates if os.path.exists(c)]
+            if candidates:
+                candidates.sort(key=os.path.getmtime, reverse=True)
+                vae_path = candidates[0]
+                logger.info(f"Auto-discovered latest VAE model: {vae_path}")
             else:
-                 raise FileNotFoundError(f"Could not find VAE model: {possible_new}. Please train the VAE for this dataset first.")
+                raise FileNotFoundError("Could not auto-discover any VAE model in data or models directory. Please train the VAE first.")
                  
         if vae_path and os.path.exists(vae_path):
             try:
@@ -727,6 +724,10 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
             from modules.spatial_model import DiscreteVQVAE
             num_embeddings = loaded_state["vq.embedding.weight"].shape[0]
             encoder = DiscreteVQVAE(latent_dim=latent_dim_detected, model_size=model_size_detected, input_spatial_dim=input_spatial_dim_detected, in_channels=in_channels_detected, num_embeddings=num_embeddings).to(device)
+        elif loaded_state and "action_predictor.0.weight" in loaded_state:
+            from modules.spatial_model import ContrastiveVisuomotorEncoder
+            n_actions = loaded_state['action_predictor.2.weight'].shape[0]
+            encoder = ContrastiveVisuomotorEncoder(latent_dim=latent_dim_detected, model_size=model_size_detected, input_spatial_dim=input_spatial_dim_detected, in_channels=in_channels_detected, n_actions=n_actions).to(device)
         else:
             encoder = TinyVAE(latent_dim=latent_dim_detected, model_size=model_size_detected, input_spatial_dim=input_spatial_dim_detected, in_channels=in_channels_detected).to(device)
         
@@ -841,41 +842,191 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
             logger.warning("No Terminal Rewards found. Reverting to uniform shuffling.")
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
             
-    elif goal_type == 'group_goal' and getattr(dataset, 'group_centroid', None) is not None:
-        logger.info("Executing HER Batch Forcing: Identifying Terminal States...")
+    elif goal_type == 'group_goal' and getattr(dataset, 'goal_latent', None) is not None:
+        logger.info("Identifying terminal states using VAE nearest-neighbor distance to goal images...")
+        
+        # Load VAE for terminal detection (independent of CVE policy encoder)
+        vae_model = None
+        vae_goal_latents = None  # [N_goals, latent_dim]
+        vae_cache_lookup = None  # basename -> latent for fast lookups
+        try:
+            import glob as _glob
+            import torchvision.transforms as T
+            
+            vae_candidates = _glob.glob(os.path.join(data_root, '*tinyvae-vae_*.pth'))
+            vae_candidates = [f for f in vae_candidates if not any(x in f.lower() for x in ['cql', 'policy', 'cve'])]
+            if vae_candidates:
+                vae_candidates.sort(key=os.path.getmtime, reverse=True)
+                vae_path = vae_candidates[0]
+                vae_sd = torch.load(vae_path, map_location=device, weights_only=True)
+                ld, ms, img_dim, ic = TinyVAE.detect_size(vae_sd)
+                vae_model = TinyVAE(latent_dim=ld, model_size=ms, input_spatial_dim=img_dim, in_channels=ic).to(device)
+                vae_model.load_state_dict(vae_sd)
+                vae_model.eval()
+                logger.info(f"Loaded VAE for terminal detection: {os.path.basename(vae_path)}")
+                
+                vae_transform = T.Compose([T.Resize((img_dim, img_dim)), T.ToTensor()])
+                
+                # Encode ALL goal images with VAE
+                goal_image_paths = sorted(_glob.glob(os.path.join(data_root, 'goals', '*.jpg')))
+                if goal_image_paths:
+                    goal_latent_list = []
+                    with torch.no_grad():
+                        for gp in goal_image_paths:
+                            goal_img = Image.open(gp).convert('RGB')
+                            goal_tensor = vae_transform(goal_img).unsqueeze(0).to(device)
+                            z = vae_model.fc_mu(vae_model.encoder(goal_tensor)).squeeze().cpu().numpy()
+                            goal_latent_list.append(z)
+                    vae_goal_latents = np.array(goal_latent_list)  # [N_goals, latent_dim]
+                    logger.info(f"Encoded {len(vae_goal_latents)} goal images with VAE")
+                
+                # Try to load VAE cache for fast lookups (avoids re-encoding 10k+ images)
+                cache_path = os.path.join(data_root, 'vae_latent_cache.npz')
+                if os.path.exists(cache_path):
+                    cache_data = np.load(cache_path, allow_pickle=True)
+                    cache_paths = cache_data['paths']
+                    cache_latents = cache_data['latents']
+                    vae_cache_lookup = {}
+                    for i, cp in enumerate(cache_paths):
+                        basename = os.path.basename(str(cp))
+                        vae_cache_lookup[basename] = cache_latents[i]
+                    logger.info(f"Loaded VAE cache with {len(vae_cache_lookup)} entries for fast distance computation")
+                else:
+                    logger.info("No VAE cache found, will encode images on-the-fly (slower)")
+            else:
+                logger.warning("No VAE model found, falling back to CVE distances for terminal detection")
+        except Exception as e:
+            logger.warning(f"Failed to load VAE for terminal detection: {e}. Falling back to CVE distances.")
+        
+        # Compute min-distance to nearest goal for each sample
         all_dists = []
+        action_dist = {}
+        _encode_count = 0
+        _cache_hit_count = 0
         for idx in range(len(dataset)):
             sample = dataset.samples[idx]
+            action_id = sample.get('action', 0)
+            action_dist[action_id] = action_dist.get(action_id, 0) + 1
+            
             latent_next_stack = sample.get('next_nodes')
-            if latent_next_stack:
-                latent_tensor = latent_next_stack[-1].get('latent')
+            if not latent_next_stack:
+                continue
+            
+            node = latent_next_stack[-1]
+            dist = None
+            
+            if vae_goal_latents is not None:
+                img_path = node.get('image_path', '')
+                basename = os.path.basename(img_path) if img_path else ''
+                z = None
+                
+                # Try cache first
+                if vae_cache_lookup and basename in vae_cache_lookup:
+                    z = vae_cache_lookup[basename]
+                    _cache_hit_count += 1
+                elif img_path:
+                    # Fall back to on-the-fly encoding
+                    full_path = img_path if os.path.isabs(img_path) else os.path.join(data_root, img_path)
+                    if os.path.exists(full_path):
+                        try:
+                            with torch.no_grad():
+                                img = Image.open(full_path).convert('RGB')
+                                t_img = vae_transform(img).unsqueeze(0).to(device)
+                                z = vae_model.fc_mu(vae_model.encoder(t_img)).squeeze().cpu().numpy()
+                                _encode_count += 1
+                        except Exception:
+                            pass
+                
+                if z is not None:
+                    # Min distance to nearest goal image
+                    dists_to_goals = np.linalg.norm(vae_goal_latents - z, axis=1)
+                    dist = float(np.min(dists_to_goals))
+            else:
+                # Fallback: use CVE distance to centroid
+                latent_tensor = node.get('latent')
                 if latent_tensor is not None:
-                    vision_dim = dataset.group_centroid.shape[-1]
+                    vision_dim = dataset.goal_latent.shape[-1]
                     vision_latent = latent_tensor[:vision_dim]
-                    dist = torch.norm(vision_latent.view(-1).to(device) - dataset.group_centroid).item()
-                    all_dists.append((idx, dist))
-                    
-        # [FIX] Strictly enforce the user's explicit group_avg_dist threshold
-        # rather than dynamically overriding it to hit a 1000-state quota
-        threshold = dataset.group_avg_dist * 1.1
-        terminal_indices = [idx for idx, dist in all_dists if dist < threshold]
-        logger.info(f"Found {len(terminal_indices)} terminal states using explicit threshold {threshold:.4f}")
+                    dist = torch.norm(vision_latent.view(-1).to(device) - dataset.goal_latent).item()
+            
+            if dist is not None:
+                all_dists.append((idx, dist))
+        
+        logger.info(f"Computed distances for {len(all_dists)}/{len(dataset)} samples (cache hits: {_cache_hit_count}, encoded: {_encode_count})")
+        
+        # K-nearest-neighbor terminal detection: for each goal image,
+        # find the K closest training frames and mark them as terminal.
+        K_NEIGHBORS = 10
+        dist_values = [d for _, d in all_dists]
+
+        
+        # Build per-goal distance lists from all_dists
+        # all_dists has (idx, min_dist_to_nearest_goal) - but we need per-goal distances
+        # Re-compute per-goal: for each goal, sort all samples by distance to that goal
+        terminal_indices_set = set()
+        if vae_goal_latents is not None:
+            # Build array of all sample latents for vectorized distance computation
+            sample_latents = []
+            sample_indices = []
+            for idx in range(len(dataset)):
+                sample = dataset.samples[idx]
+                latent_next_stack = sample.get('next_nodes')
+                if not latent_next_stack:
+                    continue
+                node = latent_next_stack[-1]
+                img_path = node.get('image_path', '')
+                basename = os.path.basename(img_path) if img_path else ''
+                z = None
+                if vae_cache_lookup and basename in vae_cache_lookup:
+                    z = vae_cache_lookup[basename]
+                if z is not None:
+                    sample_latents.append(z)
+                    sample_indices.append(idx)
+            
+            if sample_latents:
+                sample_latents_arr = np.array(sample_latents)  # [N_samples, latent_dim]
+                
+                for g_idx, goal_z in enumerate(vae_goal_latents):
+                    dists_to_goal = np.linalg.norm(sample_latents_arr - goal_z, axis=1)
+                    nearest_k = np.argsort(dists_to_goal)[:K_NEIGHBORS]
+                    for k in nearest_k:
+                        terminal_indices_set.add(sample_indices[k])
+                    max_neighbor_dist = dists_to_goal[nearest_k[-1]] if len(nearest_k) > 0 else 0.0
+                    if g_idx < 3 or g_idx == len(vae_goal_latents) - 1:
+                        logger.info(f"  Goal {g_idx+1}/{len(vae_goal_latents)}: {K_NEIGHBORS} nearest neighbors, max dist: {max_neighbor_dist:.4f}")
+        
+        terminal_indices = list(terminal_indices_set)
+        dataset.terminal_indices_set = terminal_indices_set
+        logger.info(f"Found {len(terminal_indices)} unique terminal states ({len(vae_goal_latents) if vae_goal_latents is not None else 0} goals × {K_NEIGHBORS} neighbors)")
+
+        logger.info(f"Action distribution in training data: {action_dist}")
         
         if terminal_indices:
             num_terminal = len(terminal_indices)
             num_total = len(dataset)
             num_negative = num_total - num_terminal
             
-            # We want terminal states to represent exactly 25% of the batch
+            # Terminal states represent ~25% of each batch
             w_positive = (num_negative / num_terminal) * (0.25 / 0.75)
             
+            # Action rebalancing: counteract FWD bias in Markov training data
+            max_action_count = max(action_dist.values()) if action_dist else 1
+            action_weights = {}
+            for act, count in action_dist.items():
+                action_weights[act] = max_action_count / count
+            logger.info(f"Action rebalancing weights: {action_weights}")
+            
             sample_weights = [1.0] * num_total
+            for idx in range(num_total):
+                act = dataset.samples[idx].get('action', 0)
+                sample_weights[idx] = action_weights.get(act, 1.0)
+            
             for idx in terminal_indices:
-                sample_weights[idx] = w_positive
+                sample_weights[idx] = max(sample_weights[idx], w_positive)
                 
             from torch.utils.data import WeightedRandomSampler
             sampler = WeightedRandomSampler(weights=sample_weights, num_samples=num_total, replacement=True)
-            logger.info(f"Enabled Batch Forcing! {num_terminal} Terminal frames assigned {w_positive:.2f}x sampling weight.")
+            logger.info(f"Enabled Batch Forcing! {num_terminal} Terminal frames + action rebalancing.")
             dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
         else:
             logger.warning("No Terminal Rewards found. Reverting to uniform shuffling.")
@@ -1021,7 +1172,7 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
             # [FIX] Discrete Orthogonal Bias Bleed
             # Because Action 5 is oversampled to 25%, its global bias inflates. Unpropagated sparse nodes
             # evaluate navigation actions as 0, so Action 5 wins purely through the global bias.
-            if getattr(dataset, 'goal_type', None) == 'discrete_exact':
+            if getattr(dataset, 'goal_type', None) in ('discrete_exact', 'group_goal'):
                 penalty_5 = ((1.0 - done.view(-1)) * F.relu(q_values[:, 5] + 0.1)).mean()
                 loss = loss + 1.0 * penalty_5
             
@@ -1101,12 +1252,10 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
         }
     }
     
-    # [NEW] Group Goal topological embedding
+    # Embed goal centroid into checkpoint for inference
     if getattr(dataset, 'goal_type', None) == 'group_goal':
-        if getattr(dataset, 'group_centroid', None) is not None:
-            policy_save_dict['group_centroid'] = dataset.group_centroid.cpu().numpy().tolist()
-        if getattr(dataset, 'group_avg_dist', None) is not None:
-            policy_save_dict['group_avg_dist'] = dataset.group_avg_dist
+        if getattr(dataset, 'goal_latent', None) is not None:
+            policy_save_dict['group_centroid'] = dataset.goal_latent.cpu().numpy().tolist()  # key kept for backward compat
             
     if train_from_scratch and q_net.encoder is not None:
         policy_save_dict['encoder_state_dict'] = q_net.encoder.state_dict()

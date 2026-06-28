@@ -148,8 +148,9 @@ class ManifoldService:
 
         latents, paths, luminances, actions = self._collect_latents()
         
-        if len(latents) < 1000:
-            logger.debug(f"Not enough data points ({len(latents)}) for robust PCA. Need at least 1000.")
+        if len(latents) < 10:
+            logger.debug(f"Not enough data points ({len(latents)}) for robust PCA. Need at least 10.")
+            self.is_ready = False
             return
 
         # 3. Fit PCA

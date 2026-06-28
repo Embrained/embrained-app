@@ -137,7 +137,24 @@ def train(data_root=DATA_DIR, num_epochs=20, stop_event=None, progress_callback=
     in_channels = detect_sample.shape[0] if isinstance(detect_sample, torch.Tensor) else 3
     logger.info(f"Auto-Detected Input Channels: {in_channels}")
     
-    if architecture == 'discrete':
+    if architecture == 'contrastive':
+        from modules.spatial_model import ContrastiveVisuomotorEncoder
+        from backend.training.train_cve import CVETransitionDataset, info_nce_loss, train_cve
+        logger.info(f"Initializing Contrastive Visuomotor Encoder (CVE)... (Latent: {latent_dim})")
+        # Delegate to the dedicated CVE training function
+        result_path = train_cve(
+            data_root=data_root,
+            num_epochs=num_epochs,
+            batch_size=batch_size,
+            lr=learning_rate,
+            latent_dim=latent_dim,
+            model_size=model_size,
+            stop_event=stop_event,
+            progress_callback=progress_callback,
+            model_filename=model_filename
+        )
+        return result_path
+    elif architecture == 'discrete':
         logger.info(f"Initializing DiscreteVQVAE Vision Base... (Codebook: 128x{latent_dim})")
         model = DiscreteLatentSLAM(latent_dim=latent_dim, num_actions=1, model_size=model_size, image_size=IMG_W).to(DEVICE)
     else:
@@ -351,6 +368,12 @@ def export_global_latents(model, data_root, model_name, architecture='continuous
                         else:
                             _, z_e, _, _, _, _ = model(img_tensor)
                         val = z_e.squeeze(0).cpu()
+                    elif architecture == 'contrastive':
+                        if hasattr(model, 'encode'):
+                            z = model.encode(img_tensor)
+                        else:
+                            _, z, _, _, _ = model(img_tensor)
+                        val = z.squeeze(0).cpu()
                     else:
                         _, mu, _ = model(img_tensor)
                         val = mu.squeeze(0).cpu()

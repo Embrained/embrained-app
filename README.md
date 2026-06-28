@@ -66,19 +66,19 @@ mkdir data/goals
 # Copy goal images into data/goals/  (e.g. .jpg or .png frames showing the target location)
 ```
 
-**Step 3.** Train the VQ-VAE encoder (compresses camera frames into discrete latent codes):
+**Step 3.** Train the Contrastive Visuomotor Encoder (CVE) to compress camera frames into latent state vectors:
 
 ```bash
-python cognitive-engine/backend/training/train_vqvae.py
+python cognitive-engine/backend/training/train_cve.py
 ```
 
 **Step 4.** Train the fixed-goal CQL navigation policy:
 
 ```bash
-python cognitive-engine/backend/training/train_discrete_fixed_goal_cql.py
+python cognitive-engine/backend/training/train_cve_cql_fixed_goal.py
 ```
 
-The script reads your goal images from `data/goals/`, encodes them through the VQ-VAE to find the target in latent space, and trains an offline RL policy that maps any observation to motor commands that drive toward that goal.
+The script reads your goal images from `data/goals/`, encodes them through the CVE to find the target in latent space, and trains an offline RL policy that maps any observation to motor commands that drive toward that goal.
 
 #### Option B - Goal-Conditioned Navigation (Any Goal ↔ Any Start)
 
@@ -90,16 +90,16 @@ Trains a policy that can navigate to **any goal from any location**. Once deploy
 python cognitive-engine/scripts/prepare_dataset.py
 ```
 
-**Step 2.** Train the VQ-VAE encoder:
+**Step 2.** Train the CVE:
 
 ```bash
-python cognitive-engine/backend/training/train_vqvae.py
+python cognitive-engine/backend/training/train_cve.py
 ```
 
 **Step 3.** Train the goal-conditioned CQL policy using Hindsight Experience Replay:
 
 ```bash
-python cognitive-engine/backend/train_cql.py
+python cognitive-engine/backend/training/train_cve_cql_goal_conditioned.py
 ```
 
 This uses [Hindsight Experience Replay (HER)](https://arxiv.org/abs/1707.01495) to relabel every trajectory with multiple future frames as goals, producing a policy that generalizes across all locations in your environment. At inference time, click any point in the **Latent Space** panel to set the goal - the robot will navigate there autonomously.

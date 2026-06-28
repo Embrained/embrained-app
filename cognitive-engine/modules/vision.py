@@ -98,6 +98,11 @@ class VisionSystem:
                 from modules.spatial_model import DiscreteVQVAE
                 num_embeddings = state_dict[vq_key].shape[0]
                 model = DiscreteVQVAE(latent_dim=latent_dim, model_size=model_size, input_spatial_dim=input_spatial_dim, in_channels=in_channels, num_embeddings=num_embeddings)
+            elif 'action_predictor.0.weight' in state_dict:
+                # Contrastive Visuomotor Encoder (CVE)
+                from modules.spatial_model import ContrastiveVisuomotorEncoder
+                n_actions = state_dict['action_predictor.2.weight'].shape[0]  # output dim of action predictor
+                model = ContrastiveVisuomotorEncoder(latent_dim=latent_dim, model_size=model_size, input_spatial_dim=input_spatial_dim, in_channels=in_channels, n_actions=n_actions)
             elif 'fc_e.weight' in state_dict:
                 from backend.models.quantized_spatial import DiscreteLatentSLAM
                 try:
@@ -268,7 +273,11 @@ class VisionSystem:
                 output = self.encoder(tensor) 
                 
                 # Dynamic architecture inference
-                if 'Discrete' in type(self.encoder).__name__:
+                if 'Contrastive' in type(self.encoder).__name__:
+                    z = self.encoder.encode(tensor)
+                    self.last_continuous_z = z.cpu().numpy().flatten()
+                    mu = z  # CVE outputs continuous 32-dim directly
+                elif 'Discrete' in type(self.encoder).__name__:
                     x_enc = self.encoder.encoder(tensor)
                     z_e = self.encoder.fc_e(x_enc)
                     
@@ -288,8 +297,8 @@ class VisionSystem:
                     mu = F.one_hot(idx, num_classes=num_codes).float()
                 else: 
                     # Continuous returns: recon, mu, var
-                    self.last_continuous_z = None
                     mu = output[1]
+                    self.last_continuous_z = mu.cpu().numpy().flatten()
                 
             if mu is not None:
                 mu_out = mu.cpu().numpy().flatten()
