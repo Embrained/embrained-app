@@ -33,8 +33,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from config import IMG_H, IMG_W, DATA_DIR, ACTION_PWM_MAP
-from modules.spatial_model import ContrastiveVisuomotorEncoder, TinyVAE
-from backend.train_vae import loss_function
+from modules.spatial_model import ContrastiveVisuomotorEncoder
 from backend.train_vae import export_global_latents
 
 logging.basicConfig(level=logging.INFO)
@@ -113,11 +112,10 @@ class CVETransitionDataset(Dataset):
                         frames[i + k]['abs_path']
                     ))
                     
-                self.all_image_paths.append(frames[i]['abs_path'])
+                self.all_image_paths.append((frames[i]['abs_path'], session_name, i))
             
-            # Add last frame to image pool
             if frames:
-                self.all_image_paths.append(frames[-1]['abs_path'])
+                self.all_image_paths.append((frames[-1]['abs_path'], session_name, len(frames) - 1))
         
         # Standard augmentation for anchor (strong color jitter to filter TV/lighting)
         self.augment = transforms.Compose([
@@ -137,7 +135,7 @@ class CVETransitionDataset(Dataset):
         
         # Preload all unique images into RAM
         self.image_cache = {}
-        unique_paths = list(set(self.all_image_paths))
+        unique_paths = list(set(p for p, _, _ in self.all_image_paths))
         logger.info(f"Preloading {len(unique_paths)} unique frames into RAM to bypass disk I/O...")
         
         for i, p in enumerate(unique_paths):
@@ -179,22 +177,26 @@ class CVETransitionDataset(Dataset):
         # Augmented anchor: strongly augmented version of frame_t (for invariance loss)
         anchor_aug = self.augment(img_t)
         
-        # Hard negative: random frame from distant part of dataset
-        # False Negative Rejection: ensure negative is visually distinct from anchor
-        MAX_RETRIES = 5
-        for _ in range(MAX_RETRIES):
-            neg_idx = random.randint(0, len(self.all_image_paths) - 1)
-            neg_path = self.all_image_paths[neg_idx]
-            neg_img = self.image_cache.get(neg_path, img_t)
-            
-            # Check visual similarity to prevent pushing visually identical states apart
-            anchor_tensor = self.clean_transform(img_t)
-            neg_tensor = self.clean_transform(neg_img)
-            mse = torch.mean((anchor_tensor - neg_tensor)**2)
-            if mse > 0.025: # Tunable threshold for "different enough"
+        # Hard negative: random frame from dataset, ensuring temporal/session gap
+        anchor_session = None
+        anchor_frame_idx = None
+        # Find session info for anchor
+        for path_info in self.all_image_paths:
+            if path_info[0] == img_path_t:
+                anchor_session = path_info[1]
+                anchor_frame_idx = path_info[2]
                 break
-                
-        negative = neg_tensor
+        
+        # Sample negatives with gap filtering (max 10 attempts)
+        neg_img = img_t
+        for _ in range(10):
+            rand_idx = random.randint(0, len(self.all_image_paths) - 1)
+            neg_path, neg_session, neg_frame_idx = self.all_image_paths[rand_idx]
+            # Accept if different session or far enough apart
+            if neg_session != anchor_session or abs(neg_frame_idx - (anchor_frame_idx or 0)) >= self.negative_min_gap:
+                neg_img = self.image_cache.get(neg_path, img_t)
+                break
+        negative = self.clean_transform(neg_img)
         
         action_tensor = torch.tensor(action_idx, dtype=torch.long)
         
@@ -259,15 +261,7 @@ def train_cve(data_root, num_epochs=100, batch_size=256, lr=3e-4, latent_dim=32,
         n_actions=NUM_TRAINING_ACTIONS
     ).to(DEVICE)
     
-    # [NEW] Dual-Train VAE for visual manifold/thresholding
-    vae_model = TinyVAE(
-        model_size=model_size, 
-        latent_dim=latent_dim, 
-        input_spatial_dim=IMG_W, 
-        in_channels=3
-    ).to(DEVICE)
-    vae_optimizer = optim.Adam(vae_model.parameters(), lr=lr)
-    vae_model.train()
+
 
     
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -299,7 +293,6 @@ def train_cve(data_root, num_epochs=100, batch_size=256, lr=3e-4, latent_dim=32,
             negative = negative.to(DEVICE)
             
             optimizer.zero_grad()
-            vae_optimizer.zero_grad()
             
             if scaler:
                 with torch.amp.autocast('cuda'):
@@ -324,20 +317,11 @@ def train_cve(data_root, num_epochs=100, batch_size=256, lr=3e-4, latent_dim=32,
                     
                     # Combined CVE loss
                     loss = contrastive_loss + 0.5 * action_loss + 0.3 * invariance_loss
-                    
-                    # [NEW] VAE Loss
-                    current_fractional_epoch = epoch + (batch_idx + 1) / len(dataloader)
-                    beta_warmup = min(1.0, current_fractional_epoch / 5.0) * 0.5
-                    recon, mu, logvar = vae_model(anchor)
-                    vae_loss, mse, kld = loss_function(recon, anchor, mu, logvar, beta=beta_warmup)
                 
                 scaler.scale(loss).backward()
-                scaler.scale(vae_loss).backward()
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-                torch.nn.utils.clip_grad_norm_(vae_model.parameters(), max_norm=5.0)
                 scaler.step(optimizer)
-                scaler.step(vae_optimizer)
                 scaler.update()
             else:
                 z_anchor = model.encode(anchor)
@@ -357,18 +341,9 @@ def train_cve(data_root, num_epochs=100, batch_size=256, lr=3e-4, latent_dim=32,
                 
                 loss = contrastive_loss + 0.5 * action_loss + 0.3 * invariance_loss
                 
-                # [NEW] VAE Loss
-                current_fractional_epoch = epoch + (batch_idx + 1) / len(dataloader)
-                beta_warmup = min(1.0, current_fractional_epoch / 5.0) * 0.5
-                recon, mu, logvar = vae_model(anchor)
-                vae_loss, mse, kld = loss_function(recon, anchor, mu, logvar, beta=beta_warmup)
-                
                 loss.backward()
-                vae_loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-                torch.nn.utils.clip_grad_norm_(vae_model.parameters(), max_norm=5.0)
                 optimizer.step()
-                vae_optimizer.step()
             
             total_contrastive += contrastive_loss.item()
             total_action += action_loss.item()
@@ -418,12 +393,6 @@ def train_cve(data_root, num_epochs=100, batch_size=256, lr=3e-4, latent_dim=32,
     model_path = os.path.join(data_root, f"{model_name}.pth")
     torch.save(model.state_dict(), model_path)
     logger.info(f"CVE Model saved to {model_path}")
-    
-    # [NEW] Save VAE
-    vae_model_name = f"tinyvae-vae_{timestamp}.pth"
-    vae_model_path = os.path.join(data_root, vae_model_name)
-    torch.save(vae_model.state_dict(), vae_model_path)
-    logger.info(f"Visual VAE Model saved to {vae_model_path}")
     
     # Export Global Latents for visualization and goal mapping
     logger.info("Extracting global structural latents...")

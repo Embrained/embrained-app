@@ -36,7 +36,7 @@ const TelemetryPanel = ({ data, history }) => {
                 <div className="flex flex-col gap-3 px-1">
                     <div className="flex flex-col">
                         <span className="text-gray-600 font-semibold text-xs uppercase tracking-wider">Variational Autoencoder</span>
-                        <span className="text-blue-600 font-bold text-sm">{data.bvae_model}</span>
+                        <span className="text-blue-600 font-bold text-sm">{data.cve_model}</span>
                     </div>
                     <div className="flex flex-col">
                         <span className="text-gray-600 font-semibold text-xs uppercase tracking-wider">Conservative Q-Learning</span>

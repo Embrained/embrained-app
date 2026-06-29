@@ -22,7 +22,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } fro
 import { API } from '../../services/api';
 
 const ForwardModelPanel = ({
-    dataRoot, getFileMeta, getExpectedForwardName, getExpectedVaeName,
+    dataRoot, getFileMeta, getExpectedForwardName, getExpectedCveName,
     forwardEpochs, setForwardEpochs,
     forwardBatchSize, setForwardBatchSize,
     forwardLearningRate, setForwardLearningRate,
@@ -36,8 +36,8 @@ const ForwardModelPanel = ({
     handleLoadLatestForward,
     transitionLossWeight, setTransitionLossWeight,
     contrastiveWeight, setContrastiveWeight,
-    vaeBeta, setVaeBeta,
-    pipelineArchitecture, vaeLatentDim, vaeImageSize, vaeNumLayers
+    cveBeta, setCveBeta,
+    pipelineArchitecture, cveLatentDim, cveImageSize, cveNumLayers
 }) => {
 
     const startTraining = async () => {
@@ -56,7 +56,7 @@ const ForwardModelPanel = ({
             if (last && last !== 'data') datasetName = last;
         }
 
-        const vaeModel = getExpectedVaeName(dataRoot) || "";
+        const cveModel = getExpectedCveName(dataRoot) || "";
         const generatedName = `topological_forward_${forwardApproach}_${ts}.pth`;
 
         setActiveForwardName(generatedName);
@@ -73,14 +73,14 @@ const ForwardModelPanel = ({
                     num_epochs: parseInt(forwardEpochs) || 20,
                     batch_size: parseInt(forwardBatchSize) || 64,
                     learning_rate: parseFloat(forwardLearningRate) || 0.0001,
-                    vae_beta: parseFloat(vaeBeta) || 0.5,
+                    cve_beta: parseFloat(cveBeta) || 0.5,
                     model_size: "large", // or hardcoded fallback
                     root_path: dataRoot,
                     selected_datasets: selectedDatasets,
                     model_filename: generatedName,
-                    image_size: parseInt(vaeImageSize, 10),
-                    num_layers: parseInt(vaeNumLayers, 10),
-                    latent_dim: parseInt(vaeLatentDim, 10),
+                    image_size: parseInt(cveImageSize, 10),
+                    num_layers: parseInt(cveNumLayers, 10),
+                    latent_dim: parseInt(cveLatentDim, 10),
                     transition_loss_weight: parseFloat(transitionLossWeight),
                     contrastive_weight: parseFloat(contrastiveWeight),
                     architecture: pipelineArchitecture
@@ -176,7 +176,7 @@ const ForwardModelPanel = ({
 
                 {forwardApproach === 'latentslam' && (
                     <div className="flex flex-col gap-0.5 mt-1 p-2 bg-orange-50/50 rounded border border-orange-200">
-                        <span className="text-[9px] text-orange-600 font-bold uppercase mb-1">LatentSLAM Joint Configuration (Inheriting Phase 1 [{pipelineArchitecture?.toUpperCase()}] • {vaeLatentDim}d • {vaeImageSize}px)</span>
+                        <span className="text-[9px] text-orange-600 font-bold uppercase mb-1">LatentSLAM Joint Configuration (Inheriting Phase 1 [{pipelineArchitecture?.toUpperCase()}] • {cveLatentDim}d • {cveImageSize}px)</span>
                         <div className="grid grid-cols-3 gap-2">
                         {/* Transition Loss Weight */}
                         <div className="flex flex-col gap-0.5">
@@ -203,7 +203,7 @@ const ForwardModelPanel = ({
                         {/* LatentSLAM Beta */}
                         <div className="flex flex-col gap-0.5">
                             <span className="text-[8px] text-purple-600 font-bold uppercase tracking-wider" title="New KL Weight">Joint Beta</span>
-                            <select value={vaeBeta} onChange={(e) => setVaeBeta(e.target.value)} className="w-full bg-white border border-purple-200 rounded px-1 py-0.5 text-[9px] font-mono focus:outline-none focus:border-purple-400 text-purple-700" disabled={isForwardTraining}>
+                            <select value={cveBeta} onChange={(e) => setCveBeta(e.target.value)} className="w-full bg-white border border-purple-200 rounded px-1 py-0.5 text-[9px] font-mono focus:outline-none focus:border-purple-400 text-purple-700" disabled={isForwardTraining}>
                                 <option value="4.0">4.0</option>
                                 <option value="2.0">2.0</option>
                                 <option value="1.0">1.0</option>

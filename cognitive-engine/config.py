@@ -94,7 +94,7 @@ TURN_SPEED = 0.8        # Normalized turn speed
 # --- NAVIGATION ---
 GOAL_SWITCH_INTERVAL = 20.0 # Seconds
 CONTROL_FREQ = 10.0         # Hz
-STOP_DISTANCE_THRESHOLD = 2.00
+STOP_DISTANCE_THRESHOLD = 0.80
 STOP_COOLDOWN_S = 0.2
 GOAL_LED_COLORS = [(0, 255, 0), (0, 0, 255), (255, 0, 0)] # Green, Blue, Red
 COLOR_NAME_MAP = {(0, 255, 0): "Green", (0, 0, 255): "Blue", (255, 0, 0): "Red"}

@@ -23,10 +23,10 @@ import { API } from '../../services/api';
 const TelemetryPanel = ({
     dataRoot,
     selectedDatasets,
-    activeVaeName,
-    setActiveVaeName,
-    vaeValidationImage,
-    setVaeValidationImage,
+    activeCveName,
+    setActiveCveName,
+    cveValidationImage,
+    setCveValidationImage,
     fetchFiles
 }) => {
     const [isExtracting, setIsExtracting] = useState(false);
@@ -38,7 +38,7 @@ const TelemetryPanel = ({
         }
 
         setIsExtracting(true);
-        setVaeValidationImage(null);
+        setCveValidationImage(null);
         
         try {
             const result = await API.post('/training/extract_telemetry', {
@@ -48,10 +48,10 @@ const TelemetryPanel = ({
             
             if (result.status === "success") {
                 if (result.image) {
-                    setVaeValidationImage(`data:image/png;base64,${result.image}`);
+                    setCveValidationImage(`data:image/png;base64,${result.image}`);
                 }
-                // We use the activeVaeName to store the master_telemetry state
-                setActiveVaeName("master_telemetry.csv");
+                // We use the activeCveName to store the master_telemetry state
+                setActiveCveName("master_telemetry.csv");
                 fetchFiles(dataRoot);
             } else {
                 alert(`⚠️ Extraction Failed: ${result.message}`);
@@ -95,8 +95,8 @@ const TelemetryPanel = ({
 
             {/* Validation Plot */}
             <div className="flex-1 min-h-[300px] mt-2 bg-white/40 rounded border border-slate-200/50 flex flex-col overflow-hidden relative group">
-                {vaeValidationImage ? (
-                    <img src={vaeValidationImage} alt="Telemetry Constraints" className="w-full h-full object-contain p-1" />
+                {cveValidationImage ? (
+                    <img src={cveValidationImage} alt="Telemetry Constraints" className="w-full h-full object-contain p-1" />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs italic">
                         Waiting for physics computation...
@@ -110,7 +110,7 @@ const TelemetryPanel = ({
                     <span className="font-semibold">Target File: </span>
                     <span className="font-mono text-emerald-700">master_telemetry.csv</span>
                 </div>
-                {activeVaeName === "master_telemetry.csv" && (
+                {activeCveName === "master_telemetry.csv" && (
                     <span className="font-bold text-emerald-500">READY</span>
                 )}
             </div>

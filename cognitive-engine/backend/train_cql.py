@@ -52,6 +52,7 @@ logging.basicConfig(level=logging.INFO)
 GAMMA = 0.90 # [UPDATED] Discount factor tuned for 10-step horizon
 COSINE_ALPHA = 1.0 # Reward scaling
 NUM_EPOCHS = 50
+TAU = 0.005 # Polyak averaging coefficient for target network soft updates
 # HIDDEN_DIM and INPUT_DIM imported from config
 MAX_HER_HORIZON = 10 # [RESTORED] Horizon expanded to bridge rotational sweeps
 
@@ -222,16 +223,10 @@ class SpatialCQLDataset(Dataset):
                     # [REMOVED] Historical Frame Vector Stacking
                     # The environment is perfectly Markovian (complete stops), so historical
                     # velocity is not required. State consists of a single frame.
-                    if random.random() < 0.30:
-                        curr_nodes_stack = [get_node(start_idx)]
-                        next_nodes_stack = [get_node(next_idx)]
-                        curr_actions_stack = [get_historical_action(start_idx)]
-                        next_actions_stack = [get_historical_action(next_idx)]
-                    else:
-                        curr_nodes_stack = [get_node(start_idx)]
-                        next_nodes_stack = [get_node(next_idx)]
-                        curr_actions_stack = [get_historical_action(start_idx)]
-                        next_actions_stack = [get_historical_action(next_idx)]
+                    curr_nodes_stack = [get_node(start_idx)]
+                    next_nodes_stack = [get_node(next_idx)]
+                    curr_actions_stack = [get_historical_action(start_idx)]
+                    next_actions_stack = [get_historical_action(next_idx)]
                     
                     # [NEW] Enforce pure reflex isolation for dark_wall_seek
                     effective_goal_node = None if self.goal_type in ['dark_wall_seek', 'group_goal', 'discrete_exact'] else goal_node
@@ -656,15 +651,13 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
         # vae_path is already partially resolved above, but check if we need to auto-discover
         if not vae_path and not train_from_scratch:
             import glob
-            # Fallback to auto-discovery: search for the latest VAE model in data_root or models dir
-            candidates = glob.glob(os.path.join(data_root, "*-vae_*.pth")) + \
-                         glob.glob(os.path.join(MODELS_DIR, "*-vae_*.pth")) + \
-                         glob.glob(os.path.join(data_root, "vqvae_*.pth")) + \
-                         glob.glob(os.path.join(MODELS_DIR, "vqvae_*.pth")) + \
-                         glob.glob(os.path.join(data_root, "cve_*.pth")) + \
-                         glob.glob(os.path.join(MODELS_DIR, "cve_*.pth"))
+            # Fallback to auto-discovery: search for the latest VAE or VQVAE model in data_root or models dir
+            candidates = (
+                glob.glob(os.path.join(data_root, "cve_*.pth")) + glob.glob(os.path.join(MODELS_DIR, "cve_*.pth")) +
+                glob.glob(os.path.join(data_root, "vqvae_*.pth")) + glob.glob(os.path.join(MODELS_DIR, "vqvae_*.pth"))
+            )
             if not candidates:
-                candidates = [os.path.join(data_root, "tiny_vae_final.pth"), os.path.join(MODELS_DIR, "tiny_vae_final.pth")]
+                candidates = []
                 
             candidates = [c for c in candidates if os.path.exists(c)]
             if candidates:
@@ -672,14 +665,14 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
                 vae_path = candidates[0]
                 logger.info(f"Auto-discovered latest VAE model: {vae_path}")
             else:
-                raise FileNotFoundError("Could not auto-discover any VAE model in data or models directory. Please train the VAE first.")
+                raise FileNotFoundError("Could not auto-discover any CVE or VQVAE model in data or models directory. Please train the VAE first.")
                  
         if vae_path and os.path.exists(vae_path):
             try:
                 temp_state = torch.load(vae_path, map_location=device, weights_only=True)
                 
                 if "valid_actions" in temp_state or "model_state_dict" in temp_state:
-                    logger.warning(f"The file {vae_path} appears to be a CQL Policy, not a VAE Encoder!")
+                    logger.warning(f"The file {vae_path} appears to be a CQL Policy, not a CVE Encoder!")
                     alt_path = vae_path.replace("-cql", "").replace("cql_", "")
                     if os.path.exists(alt_path) and alt_path != vae_path:
                         vae_path = alt_path
@@ -688,12 +681,12 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
                              raise ValueError("Auto-corrected file is ALSO a policy.")
                     else:
                         parent = os.path.dirname(vae_path)
-                        candidates = [f for f in os.listdir(parent) if "vae" in f.lower() and "cql" not in f.lower() and f.endswith(".pth")]
+                        candidates = [f for f in os.listdir(parent) if "cve" in f.lower() and "cql" not in f.lower() and f.endswith(".pth")]
                         if candidates:
                             vae_path = os.path.join(parent, candidates[0])
                             temp_state = torch.load(vae_path, map_location=device, weights_only=True)
                         else:
-                            raise ValueError(f"No valid VAE found to replace {vae_path}")
+                            raise ValueError(f"No valid CVE found to replace {vae_path}")
 
                 loaded_state = temp_state
                 
@@ -843,9 +836,9 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
             
     elif goal_type == 'group_goal' and getattr(dataset, 'goal_latent', None) is not None:
-        logger.info("Identifying terminal states using VAE nearest-neighbor distance to goal images...")
+        logger.info("Identifying terminal states using CVE nearest-neighbor distance to goal images...")
         
-        # Load VAE for terminal detection (independent of CVE policy encoder)
+        # Load CVE for terminal detection (independent of CVE policy encoder)
         vae_model = None
         vae_goal_latents = None  # [N_goals, latent_dim]
         vae_cache_lookup = None  # basename -> latent for fast lookups
@@ -853,17 +846,18 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
             import glob as _glob
             import torchvision.transforms as T
             
-            vae_candidates = _glob.glob(os.path.join(data_root, '*tinyvae-vae_*.pth'))
-            vae_candidates = [f for f in vae_candidates if not any(x in f.lower() for x in ['cql', 'policy', 'cve'])]
+            vae_candidates = _glob.glob(os.path.join(data_root, 'cve_*.pth'))
+            vae_candidates = [f for f in vae_candidates if not any(x in f.lower() for x in ['cql', 'policy'])]
             if vae_candidates:
                 vae_candidates.sort(key=os.path.getmtime, reverse=True)
                 vae_path = vae_candidates[0]
                 vae_sd = torch.load(vae_path, map_location=device, weights_only=True)
-                ld, ms, img_dim, ic = TinyVAE.detect_size(vae_sd)
-                vae_model = TinyVAE(latent_dim=ld, model_size=ms, input_spatial_dim=img_dim, in_channels=ic).to(device)
+                ld, ms, img_dim, ic = 32, "medium", 64, 3
+                from modules.spatial_model import ContrastiveVisuomotorEncoder
+                vae_model = ContrastiveVisuomotorEncoder(latent_dim=ld, model_size=ms, input_spatial_dim=img_dim, in_channels=ic).to(device)
                 vae_model.load_state_dict(vae_sd)
                 vae_model.eval()
-                logger.info(f"Loaded VAE for terminal detection: {os.path.basename(vae_path)}")
+                logger.info(f"Loaded CVE for terminal detection: {os.path.basename(vae_path)}")
                 
                 vae_transform = T.Compose([T.Resize((img_dim, img_dim)), T.ToTensor()])
                 
@@ -875,13 +869,14 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
                         for gp in goal_image_paths:
                             goal_img = Image.open(gp).convert('RGB')
                             goal_tensor = vae_transform(goal_img).unsqueeze(0).to(device)
-                            z = vae_model.fc_mu(vae_model.encoder(goal_tensor)).squeeze().cpu().numpy()
+                            z = vae_model.encode(goal_tensor).squeeze().cpu().numpy()
                             goal_latent_list.append(z)
-                    vae_goal_latents = np.array(goal_latent_list)  # [N_goals, latent_dim]
-                    logger.info(f"Encoded {len(vae_goal_latents)} goal images with VAE")
+                    all_goals = np.array(goal_latent_list)  # [N_goals, latent_dim]
+                    vae_goal_latents = np.mean(all_goals, axis=0, keepdims=True)
+                    logger.info(f"Encoded {len(all_goals)} goal images, computed 1 CVE centroid")
                 
                 # Try to load VAE cache for fast lookups (avoids re-encoding 10k+ images)
-                cache_path = os.path.join(data_root, 'vae_latent_cache.npz')
+                cache_path = os.path.join(data_root, 'cve_latent_cache.npz')
                 if os.path.exists(cache_path):
                     cache_data = np.load(cache_path, allow_pickle=True)
                     cache_paths = cache_data['paths']
@@ -890,19 +885,24 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
                     for i, cp in enumerate(cache_paths):
                         basename = os.path.basename(str(cp))
                         vae_cache_lookup[basename] = cache_latents[i]
-                    logger.info(f"Loaded VAE cache with {len(vae_cache_lookup)} entries for fast distance computation")
+                    logger.info(f"Loaded CVE cache with {len(vae_cache_lookup)} entries for fast distance computation")
                 else:
-                    logger.info("No VAE cache found, will encode images on-the-fly (slower)")
+                    logger.info("No CVE cache found, will encode images on-the-fly (slower)")
             else:
-                logger.warning("No VAE model found, falling back to CVE distances for terminal detection")
+                logger.warning("No CVE model found, falling back to basic spatial distances for terminal detection")
         except Exception as e:
-            logger.warning(f"Failed to load VAE for terminal detection: {e}. Falling back to CVE distances.")
+            logger.warning(f"Failed to load CVE for terminal detection: {e}. Falling back to basic spatial distances.")
         
         # Compute min-distance to nearest goal for each sample
         all_dists = []
         action_dist = {}
         _encode_count = 0
         _cache_hit_count = 0
+        
+        # Initialize vae_cache_lookup if it doesn't exist
+        if vae_cache_lookup is None:
+            vae_cache_lookup = {}
+            
         for idx in range(len(dataset)):
             sample = dataset.samples[idx]
             action_id = sample.get('action', 0)
@@ -921,7 +921,7 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
                 z = None
                 
                 # Try cache first
-                if vae_cache_lookup and basename in vae_cache_lookup:
+                if basename in vae_cache_lookup:
                     z = vae_cache_lookup[basename]
                     _cache_hit_count += 1
                 elif img_path:
@@ -932,8 +932,10 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
                             with torch.no_grad():
                                 img = Image.open(full_path).convert('RGB')
                                 t_img = vae_transform(img).unsqueeze(0).to(device)
-                                z = vae_model.fc_mu(vae_model.encoder(t_img)).squeeze().cpu().numpy()
+                                z = vae_model.encode(t_img).squeeze().cpu().numpy()
                                 _encode_count += 1
+                                # Cache it for the downstream KNN logic
+                                vae_cache_lookup[basename] = z
                         except Exception:
                             pass
                 
@@ -954,9 +956,20 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
         
         logger.info(f"Computed distances for {len(all_dists)}/{len(dataset)} samples (cache hits: {_cache_hit_count}, encoded: {_encode_count})")
         
+        # Save cache back to disk if we encoded new frames
+        if _encode_count > 0:
+            cache_path = os.path.join(data_root, 'cve_latent_cache.npz')
+            try:
+                paths_list = list(vae_cache_lookup.keys())
+                latents_list = list(vae_cache_lookup.values())
+                np.savez_compressed(cache_path, paths=paths_list, latents=latents_list)
+                logger.info(f"Successfully generated and saved CVE latent cache to: {cache_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save CVE cache file to disk: {e}")
+        
         # K-nearest-neighbor terminal detection: for each goal image,
         # find the K closest training frames and mark them as terminal.
-        K_NEIGHBORS = 10
+        K_NEIGHBORS = 100
         dist_values = [d for _, d in all_dists]
 
         
@@ -1180,6 +1193,11 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
             loss.backward()
             optimizer.step()
             
+            # Polyak soft update of target network every gradient step
+            with torch.no_grad():
+                for p_online, p_target in zip(q_net.parameters(), target_q_net.parameters()):
+                    p_target.data.mul_(1.0 - TAU).add_(TAU * p_online.data)
+            
             total_loss += loss.item()
             
             # [NEW] Dynamic interval (Time-based ~1Hz)
@@ -1204,8 +1222,7 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
         if progress_callback:
             progress_callback(epoch + 1, avg_loss)
         
-        # Target Update
-        target_q_net.load_state_dict(q_net.state_dict())
+        # Target network is updated via Polyak soft update every gradient step (see training loop above)
         
     if model_filename:
         # Ensure it ends with .pth
@@ -1215,14 +1232,14 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
     else:
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         if vae_path:
-            vae_basename = os.path.splitext(os.path.basename(vae_path))[0]
+            cve_basename = os.path.splitext(os.path.basename(vae_path))[0]
             
             if goal_type == 'dark_wall_seek':
-                policy_basename = f"{vae_basename}-dark-wall-cql_{timestamp}"
+                policy_basename = f"{cve_basename}-dark-wall-cql_{timestamp}"
             elif goal_type == 'group_goal':
-                policy_basename = f"{vae_basename}-group-goal-cql_{timestamp}"
+                policy_basename = f"{cve_basename}-group-goal-cql_{timestamp}"
             else:
-                policy_basename = f"{vae_basename}-cql_{timestamp}"
+                policy_basename = f"{cve_basename}-cql_{timestamp}"
         else:
             parent_name = os.path.basename(os.path.normpath(data_root))
             
@@ -1429,7 +1446,7 @@ def evaluate_policy(q_net, dataset, trajectories, device, num_samples=500):
         terminal_indices = []
         for idx in range(len(dataset)):
             _, _, _, _, _, _, reward, _ = dataset[idx]
-            if reward.item() >= 49.0: # Match +50
+            if reward.item() >= 0.9:  # Match terminal reward of 1.0 (with tolerance)
                 terminal_indices.append(idx)
         
         if len(terminal_indices) > 0:

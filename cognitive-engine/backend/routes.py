@@ -69,7 +69,7 @@ class TrainRequest(BaseModel):
     learning_rate: float = 0.0001 
     model_size: str = "small" 
     model_filename: Optional[str] = None # [NEW] Fixes missing attribute error
-    vae_model: Optional[str] = None 
+    cve_model: Optional[str] = None 
     dataset_percent: int = 10 # [NEW]
     tag: str = "red_ball" # [NEW]
     cql_goal_type: str = "her" # [NEW] Wall-seeking toggle
@@ -524,15 +524,15 @@ async def verify_forward_model(request: Request, req: VerifyForwardRequest):
              parity_path = os.path.join(data_dir, '..', 'models', f"{base}_parity.png")
         
         fwd_path = os.path.join(data_dir, req.model_filename)
-        vae_path = os.path.join(data_dir, req.vae_filename) if req.vae_filename else ""
-        if not os.path.exists(vae_path) and hasattr(req, 'vae_filename'):
+        cve_path = os.path.join(data_dir, req.vae_filename) if req.vae_filename else ""
+        if not os.path.exists(cve_path) and hasattr(req, 'vae_filename'):
             import glob
             vaes = glob.glob(os.path.join(data_dir, "*_vae_*.pth"))
             if not vaes: vaes = glob.glob(os.path.join(data_dir, "*.pth")) # fallback
-            if vaes: vae_path = max([v for v in vaes if 'forward' not in v and 'cql' not in v], key=os.path.getmtime)
+            if vaes: cve_path = max([v for v in vaes if 'forward' not in v and 'cql' not in v], key=os.path.getmtime)
             
         img_b64 = generate_forward_dashboard(
-            fwd_path, vae_path, parity_path, data_dir, base, req.approach
+            fwd_path, cve_path, parity_path, data_dir, base, req.approach
         )
         if img_b64:
              meta = None

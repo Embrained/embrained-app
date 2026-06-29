@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from config import DATA_DIR
 from backend.training.train_fixed_goal import TARGET_IMAGES, normalize_path
 from backend.train_cql import train as run_cql_train
-from modules.spatial_model import TinyVAE
+from modules.spatial_model import TinyVAE, ContrastiveVisuomotorEncoder
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -25,35 +25,41 @@ def main():
     
     target_normalized = [normalize_path(p) for p in TARGET_IMAGES]
         
-    # Dynamically find the latest VAE model
+    # Dynamically find the latest CVE model
     import glob
-    print("Searching for latest VAE checkpoint in data directory...")
-    vae_candidates = glob.glob(os.path.join(DATA_ROOT, '*-vae_*.pth'))
+    print("Searching for latest CVE checkpoint in data directory...")
+    cve_candidates = glob.glob(os.path.join(DATA_ROOT, 'cve_*.pth'))
     # Filter out generated policy files that accidentally match the prefix
-    vae_candidates = [f for f in vae_candidates if not any(x in f.lower() for x in ['hello_world', 'cql', 'reflex', 'fixed_goal', 'policy'])]
-    if not vae_candidates:
-        print("Error: No VAE found matching pattern '*-vae_*.pth'!")
+    cve_candidates = [f for f in cve_candidates if not any(x in f.lower() for x in ['hello_world', 'cql', 'reflex', 'fixed_goal', 'policy'])]
+    if not cve_candidates:
+        print("Error: No CVE found matching pattern 'cve_*.pth'!")
         return
         
-    vae_candidates.sort(key=os.path.getmtime, reverse=True)
-    VAE_PATH = vae_candidates[0]
-    vae_basename = os.path.basename(VAE_PATH).replace('.pth', '')
-    print(f"-> Selected latest VAE: {os.path.basename(VAE_PATH)}")
+    cve_candidates.sort(key=os.path.getmtime, reverse=True)
+    CVE_PATH = cve_candidates[0]
+    cve_basename = os.path.basename(CVE_PATH).replace('.pth', '')
+    print(f"-> Selected latest CVE: {os.path.basename(CVE_PATH)}")
 
-    print("Loading VAE weights into memory...")
+    print("Loading CVE weights into memory...")
     try:
-        vae_state = torch.load(VAE_PATH, map_location=device, weights_only=True)
-        latent_dim, model_size, img_dim, in_channels = TinyVAE.detect_size(vae_state)
-        vae = TinyVAE(latent_dim=latent_dim, model_size=model_size, input_spatial_dim=img_dim, in_channels=in_channels).to(device)
-        vae.load_state_dict(vae_state)
-        vae.eval()
-        print("-> VAE loaded successfully!")
+        cve_state = torch.load(CVE_PATH, map_location=device, weights_only=True)
+        if "action_predictor.0.weight" not in cve_state:
+            print("Error: Model state dict does not appear to be a CVE.")
+            return
+        
+        latent_dim, model_size, img_dim, in_channels = TinyVAE.detect_size(cve_state)
+        n_actions = cve_state['action_predictor.2.weight'].shape[0]
+        
+        cve = ContrastiveVisuomotorEncoder(latent_dim=latent_dim, model_size=model_size, input_spatial_dim=img_dim, in_channels=in_channels, n_actions=n_actions).to(device)
+        cve.load_state_dict(cve_state)
+        cve.eval()
+        print(f"-> CVE loaded successfully! ({latent_dim}d latent, {model_size} encoder, {img_dim}x{img_dim})")
     except Exception as e:
-        print(f"Failed to load VAE: {e}")
+        print(f"Failed to load CVE: {e}")
         return
 
     # Set up cache_path
-    cache_path = os.path.join(DATA_ROOT, f"{vae_basename}_global_latents.pt")
+    cache_path = os.path.join(DATA_ROOT, f"{cve_basename}_global_latents.pt")
     print(f"Targeting latent cache: {os.path.basename(cache_path)}")
         
     latent_dict = {}
@@ -65,7 +71,7 @@ def main():
     else:
         print("-> No existing latent cache found. On-the-fly extraction will be used.")
         
-    transform = T.Compose([T.Resize((64, 64)), T.ToTensor()])
+    transform = T.Compose([T.Resize((img_dim, img_dim)), T.ToTensor()])
     
     # Extract target latents
     print("Extracting canonical target latents from goal images...")
@@ -79,7 +85,7 @@ def main():
                 if os.path.exists(img_path):
                     img = Image.open(img_path).convert('RGB')
                     t_img = transform(img).unsqueeze(0).to(device)
-                    _, mu, _ = vae(t_img)
+                    mu = cve.encode(t_img)
                     target_latents.append(mu.cpu().squeeze())
                     latent_dict[target] = mu.cpu().squeeze()
                 else:
@@ -103,7 +109,7 @@ def main():
     print(f"Embedded Centroid target bounds to {group_stats_path}")
         
     # 3. Trigger Offline RL CQL Training Map
-    new_model_name = f"{vae_basename}-fixed_goal_cql_e2e_model.pth"
+    new_model_name = f"{cve_basename}-fixed_goal_cql_e2e_model.pth"
     print("\n" + "="*50)
     print(f"🔥 INITIALIZING END-TO-END CONSERVATIVE Q-LEARNING (CQL) 🔥")
     print("="*50 + "\n")
@@ -111,7 +117,7 @@ def main():
     run_cql_train(
         data_root=DATA_ROOT,
         num_epochs=50,
-        vae_model_filename=os.path.basename(VAE_PATH),
+        vae_model_filename=os.path.basename(CVE_PATH),
         batch_size=64, # Reduced from 128 to combat OOM issues during end-to-end vision backpropagation
         learning_rate=1e-4, # Standard CQL learning rate
         model_size='large',

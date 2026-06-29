@@ -496,7 +496,16 @@ class CQLNetwork(nn.Module):
                 # Pure Oracle Configuration! No LayerNorm should ever be applied to raw geometric telemetry!
                 self.use_ln = False
             else:
-                latent_dim_total = input_dim if input_dim % 32 == 0 else input_dim - 2
+                # Determine the latent portion for LayerNorm by finding the largest
+                # multiple of a common latent_dim (8, 16, 32, 64) that fits input_dim.
+                # Any remainder is treated as auxiliary state dims (telemetry, etc.).
+                latent_dim_total = input_dim
+                for base in [64, 32, 16, 8]:
+                    if input_dim >= base and input_dim % base != 0:
+                        candidate = (input_dim // base) * base
+                        if candidate > 0:
+                            latent_dim_total = candidate
+                            break
                 self.ln = nn.LayerNorm(latent_dim_total)
                 self.latent_dim_total = latent_dim_total
             
@@ -535,29 +544,36 @@ class FullQNet(nn.Module):
         self.policy = policy
         self.has_goal = has_goal
         
+    def _encode_images(self, imgs):
+        """Encode images through the encoder, handling both TinyVAE and CVE APIs."""
+        if hasattr(self.encoder, 'projection'):
+            # CVE encoder: use encode() which applies encoder + projection
+            return self.encoder.encode(imgs)
+        else:
+            # TinyVAE encoder: use encoder conv stack + fc_mu linear
+            feat = self.encoder.encoder(imgs)
+            return self.encoder.fc_mu(feat)
+
     def forward(self, img_current, img_goal, state_cur):
-        # img_current: [B, 4, 3, H, W]
-        # img_goal: [B, 3, H, W]
-        # state_cur: [B, 3]
+        # img_current: [B, S, C, H, W]
+        # img_goal: [B, C, H, W]
+        # state_cur: [B, state_dim]
         
         B = img_current.size(0)
         
-        # Reshape stacked images to process all frames simultaneously: [B*4, 3, H, W]
+        # Reshape stacked images to process all frames simultaneously: [B*S, C, H, W]
         img_current_flat = img_current.view(-1, img_current.size(-3), img_current.size(-2), img_current.size(-1))
         
-        feat_cur = self.encoder.encoder(img_current_flat)
-        mu_cur_flat = self.encoder.fc_mu(feat_cur) # [B*4, 32]
+        mu_cur_flat = self._encode_images(img_current_flat)  # [B*S, latent_dim]
         
-        # Reshape back to [B, 4, 32] and then flatten time dim to [B, 128]
+        # Reshape back to [B, S*latent_dim] (flatten time dim)
         mu_cur = mu_cur_flat.view(B, -1)
         
         # Single goal image processed normally
         if self.has_goal and img_goal is not None:
-            feat_goal = self.encoder.encoder(img_goal)
-            mu_goal = self.encoder.fc_mu(feat_goal) # [B, 32]
+            mu_goal = self._encode_images(img_goal)  # [B, latent_dim]
             
-            # Concatenate purely spatial dimensions [Latent Current : 32] + [Latent Goal : 32] = 64
-            # Drops the state_cur variables completely from the matrix arrays!
+            # Concatenate: [Latent Current] + [Latent Goal]
             state = torch.cat([mu_cur, mu_goal], dim=1) 
         else:
             state = mu_cur

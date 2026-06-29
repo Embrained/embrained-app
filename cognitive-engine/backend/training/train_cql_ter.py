@@ -163,6 +163,28 @@ class TERDataset(Dataset):
             })
             
         print(f"Prepared {len(self.samples)} TER samples for training.")
+        
+        # Precompute all latents to avoid per-sample VAE inference in __getitem__
+        print("Precomputing VAE latents for all samples...")
+        unique_nodes = {}
+        for sample in self.samples:
+            for key in ['u_node', 'v_node']:
+                node = sample[key]
+                node_path = node.get('image_path', '')
+                if node_path and node_path not in unique_nodes:
+                    unique_nodes[node_path] = node
+        
+        with torch.no_grad():
+            batch_nodes = list(unique_nodes.values())
+            for i in range(0, len(batch_nodes), 128):
+                batch = batch_nodes[i:i+128]
+                imgs = torch.stack([self._load_img(n) for n in batch]).to(self.device)
+                _, mus, _ = self.vae(imgs)
+                for j, n in enumerate(batch):
+                    n['_cached_latent'] = mus[j].cpu()
+        
+        # Also cache goal latent
+        print("Latent precomputation complete.")
 
     def __len__(self):
         return len(self.samples)
@@ -170,8 +192,9 @@ class TERDataset(Dataset):
     def __getitem__(self, idx):
         sample = self.samples[idx]
         
-        u_latent = self._get_latent(sample['u_node'])
-        v_latent = self._get_latent(sample['v_node'])
+        # Use precomputed latents
+        u_latent = sample['u_node'].get('_cached_latent', self._get_latent(sample['u_node']))
+        v_latent = sample['v_node'].get('_cached_latent', self._get_latent(sample['v_node']))
         
         # Policy Input = [Current Latent] * 3 + [Goal Latent]
         state_curr = torch.cat([u_latent, u_latent, u_latent, self.goal_latent], dim=0)
@@ -203,6 +226,8 @@ def main():
     policy = CQLNetwork(input_dim=(dataset.latent_dim * 3) + dataset.latent_dim, hidden_dim=HIDDEN_DIM, action_dim=ACTION_DIM, model_size=dataset.model_size).to(device)
     optimizer = optim.Adam(policy.parameters(), lr=1e-4)
     
+    CQL_ALPHA = 0.1  # Conservative penalty weight
+    
     num_epochs = 20
     for epoch in range(num_epochs):
         policy.train()
@@ -217,14 +242,21 @@ def main():
             
             q_chosen = q_values.gather(1, action.unsqueeze(1)).squeeze(1)
             
-            loss = F.mse_loss(q_chosen, target)
+            # TD regression loss
+            td_loss = F.mse_loss(q_chosen, target)
+            
+            # CQL conservative penalty: penalize overestimation of OOD actions
+            logsumexp_q = torch.logsumexp(q_values, dim=1)
+            cql_loss = (logsumexp_q - q_chosen).mean()
+            
+            loss = td_loss + CQL_ALPHA * cql_loss
             
             loss.backward()
             optimizer.step()
             
             total_loss += loss.item()
             
-        print(f"Epoch {epoch+1}/{num_epochs} | Regression Loss: {total_loss/len(dataloader):.4f}")
+        print(f"Epoch {epoch+1}/{num_epochs} | Loss: {total_loss/len(dataloader):.4f} (TD + CQL)")
         
     out_path = os.path.join(DATA_ROOT, "ter_cql_model.pth")
     torch.save(policy.state_dict(), out_path)

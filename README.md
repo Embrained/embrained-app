@@ -72,19 +72,13 @@ mkdir data/goals
 python cognitive-engine/backend/training/train_cve.py
 ```
 
-**Step 3b.** Train the Continuous VAE (used for terminal goal detection and latent space projection in the UI):
-
-```bash
-python cognitive-engine/backend/train_vae.py
-```
-
 **Step 4.** Train the fixed-goal CQL navigation policy:
 
 ```bash
 python cognitive-engine/backend/training/train_cve_cql_fixed_goal.py
 ```
 
-The script reads your goal images from `data/goals/`, uses the VAE to automatically detect high-precision terminal states via nearest-neighbor clustering, and trains an offline RL policy using CVE representations that maps observations to motor commands to drive toward the target.
+The script reads your goal images from `data/goals/`, uses the CVE to automatically detect high-precision terminal states via nearest-neighbor clustering, and trains an offline RL policy using CVE representations that maps observations to motor commands to drive toward the target.
 
 #### Option B - Goal-Conditioned Navigation (Any Goal ↔ Any Start)
 
@@ -100,12 +94,6 @@ python cognitive-engine/scripts/prepare_dataset.py
 
 ```bash
 python cognitive-engine/backend/training/train_cve.py
-```
-
-**Step 2b.** Train the VAE (required to map and interact with the 2D Latent Space panel in the dashboard):
-
-```bash
-python cognitive-engine/backend/train_vae.py
 ```
 
 **Step 3.** Train the goal-conditioned CQL policy using Hindsight Experience Replay:

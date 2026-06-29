@@ -47,8 +47,8 @@ def main():
     # Verify it loads correctly
     try:
         state_dict = torch.load(CVE_PATH, map_location=device, weights_only=True)
-        latent_dim, model_size, img_dim, in_channels = TinyVAE.detect_size(state_dict)
         assert 'action_predictor.0.weight' in state_dict, "Not a CVE model!"
+        latent_dim, model_size, img_dim, in_channels = TinyVAE.detect_size(state_dict)
         print(f"-> CVE verified: {latent_dim}d latent, {model_size} encoder, {img_dim}x{img_dim} input")
     except Exception as e:
         print(f"Failed to verify CVE model: {e}")

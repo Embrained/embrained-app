@@ -19,7 +19,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 /* Client-side Manifold Rendering */
-const VisualizationPanel = ({ keypoints, manifoldCoord, goalCoords, goalIdx, matchCoord, activeVae, bounds: initialBounds, latentDist, latentThreshold, visualizationMode = 'default', onPointClick }) => {
+const VisualizationPanel = ({ keypoints, manifoldCoord, goalCoords, goalIdx, matchCoord, activeCve, bounds: initialBounds, latentDist, latentThreshold, visualizationMode = 'default', onPointClick }) => {
     const canvasRef = useRef(null);
     const mappingRef = useRef(null);
     const [points, setPoints] = useState([]);
@@ -31,7 +31,7 @@ const VisualizationPanel = ({ keypoints, manifoldCoord, goalCoords, goalIdx, mat
         goalCoords: [],
         goalIdx: 0,
         matchCoord: null,
-        activeVae: "N/A",
+        activeCve: "N/A",
         dims: { w: 0, h: 0 },
         initialBounds: null,
         latentDist: 0,
@@ -40,12 +40,12 @@ const VisualizationPanel = ({ keypoints, manifoldCoord, goalCoords, goalIdx, mat
     });
 
     useEffect(() => {
-        stateRef.current = { points, manifoldCoord, goalCoords, goalIdx, matchCoord, activeVae, dims, initialBounds, latentDist, latentThreshold, visualizationMode };
-    }, [points, manifoldCoord, goalCoords, goalIdx, matchCoord, activeVae, dims, initialBounds, latentDist, latentThreshold, visualizationMode]);
+        stateRef.current = { points, manifoldCoord, goalCoords, goalIdx, matchCoord, activeCve, dims, initialBounds, latentDist, latentThreshold, visualizationMode };
+    }, [points, manifoldCoord, goalCoords, goalIdx, matchCoord, activeCve, dims, initialBounds, latentDist, latentThreshold, visualizationMode]);
 
     // 1. Fetch Manifold Points with Polling
     useEffect(() => {
-        if (!activeVae || activeVae === "N/A") {
+        if (!activeCve || activeCve === "N/A") {
             setPoints([]);
             return;
         }
@@ -64,7 +64,7 @@ const VisualizationPanel = ({ keypoints, manifoldCoord, goalCoords, goalIdx, mat
                 .catch(err => console.error("Failed to fetch manifold points:", err));
         };
 
-        // Fetch immediately on mount or activeVae/thresholdSpace change
+        // Fetch immediately on mount or activeCve/thresholdSpace change
         fetchPoints();
 
         // Also set up a slow poll just in case points are generated after initial load
@@ -81,7 +81,7 @@ const VisualizationPanel = ({ keypoints, manifoldCoord, goalCoords, goalIdx, mat
             isMounted = false;
             clearInterval(interval);
         };
-    }, [activeVae]);
+    }, [activeCve]);
 
     // 2. Resize Observer
     useEffect(() => {
@@ -224,7 +224,7 @@ const VisualizationPanel = ({ keypoints, manifoldCoord, goalCoords, goalIdx, mat
                 ctx.fillStyle = '#64748b'; // slate-500
                 ctx.font = '12px monospace';
                 ctx.textAlign = 'center';
-                if (state.activeVae && state.activeVae !== "N/A") {
+                if (state.activeCve && state.activeCve !== "N/A") {
                     ctx.fillText("WAITING FOR DATA (Need 1000+ samples)...", w / 2, h / 2);
                 } else {
                     ctx.fillText("NO MANIFOLD ACTIVE", w / 2, h / 2);
@@ -385,7 +385,7 @@ const VisualizationPanel = ({ keypoints, manifoldCoord, goalCoords, goalIdx, mat
     return (
         <div className="w-full h-full relative overflow-hidden bg-slate-900 border border-slate-700 rounded-lg">
             {/* [NEW] Distance / Threshold Overlay */}
-            {activeVae && activeVae !== "N/A" && typeof latentDist === 'number' && typeof latentThreshold === 'number' && (
+            {activeCve && activeCve !== "N/A" && typeof latentDist === 'number' && typeof latentThreshold === 'number' && (
                 <div className="absolute top-2 right-2 bg-slate-900/80 backdrop-blur-[2px] border border-slate-700 shadow-sm rounded px-2 py-1 flex items-center gap-3 z-10 pointer-events-none">
                     <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
                         DIST:

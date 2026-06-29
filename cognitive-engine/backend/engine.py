@@ -280,7 +280,7 @@ class CognitiveEngine:
         logging.debug(f"Attempting to switch Background VAE to: {model_filename}")
         if model_filename == "master_telemetry.csv":
             self.bg_vision.enable_groundtruth(True)
-            self.state_manager.update('bvae_model', "master_telemetry.csv")
+            self.state_manager.update('cve_model', "master_telemetry.csv")
             return True
         else:
             self.bg_vision.enable_groundtruth(False)
@@ -295,7 +295,7 @@ class CognitiveEngine:
                  self.bg_manifold.set_model_name(model_filename, model_path=path)
                  self.bg_manifold.is_ready = False
                  self.bg_manifold.start_background_fit(force=False)
-             self.state_manager.update('bvae_model', model_filename)
+             self.state_manager.update('cve_model', model_filename)
              self._update_bg_vision_goals()
              return True
         return False
@@ -321,7 +321,7 @@ class CognitiveEngine:
             self.bg_vision.continuous_goal = np.mean(latents_arr, axis=0)
             logging.info(f"Computed background VAE goal centroid from {len(latents)} images.")
 
-    def load_vae_model(self, model_filename):
+    def load_cve_model(self, model_filename):
         logging.debug(f"Attempting to switch Policy VAE to: {model_filename}")
         if model_filename == "master_telemetry.csv":
             self.vision.enable_groundtruth(True)
@@ -343,23 +343,6 @@ class CognitiveEngine:
              return True
         return False
 
-             
-        logging.info(f"Loading VAE from: {path}")
-        
-        if self.vision.load_model(path):
-             logging.debug("Reloading Manifold for new VAE...")
-             if self.bg_manifold:
-                 self.bg_manifold.set_model_name(model_filename, model_path=path)
-                 self.bg_manifold.is_ready = False
-                 self.bg_manifold.start_background_fit(force=False)
-             # [NEW] Update State for UI
-             self.state_manager.update('bvae_model', model_filename)
-             self._auto_adjust_threshold_for_model(model_filename)
-             self._refresh_goal_latents()
-             return True
-        else:
-             logging.error("VisionSystem.load_model returned False")
-        return False
 
     def load_cql_model(self, model_filename):
         """Helper to load CQL model, used by Dispatcher."""
@@ -382,40 +365,37 @@ class CognitiveEngine:
                 else:
                     # 1. Parse the VAE base name from the CQL policy filename
                     if "-dark-wall-cql_" in model_filename:
-                        vae_candidate = model_filename.split("-dark-wall-cql_")[0] + ".pth"
+                        cve_candidate = model_filename.split("-dark-wall-cql_")[0] + ".pth"
                     elif "-hello_world" in model_filename:
-                        vae_candidate = model_filename.split("-hello_world")[0] + ".pth"
+                        cve_candidate = model_filename.split("-hello_world")[0] + ".pth"
                     elif "-fixed_goal" in model_filename:
-                        vae_candidate = model_filename.split("-fixed_goal")[0] + ".pth"
+                        cve_candidate = model_filename.split("-fixed_goal")[0] + ".pth"
                     elif "-discrete_cql" in model_filename:
-                        vae_candidate = model_filename.split("-discrete_cql")[0] + ".pth"
+                        cve_candidate = model_filename.split("-discrete_cql")[0] + ".pth"
                     elif "-cql_" in model_filename:
-                        vae_candidate = model_filename.split("-cql_")[0] + ".pth"
+                        cve_candidate = model_filename.split("-cql_")[0] + ".pth"
                     else:
                         # Fallback for old models
-                        vae_candidate = model_filename.replace("-cql", "")
-                        if not vae_candidate.endswith(".pth"):
-                            vae_candidate += ".pth"
+                        cve_candidate = model_filename.replace("-cql", "")
+                        if not cve_candidate.endswith(".pth"):
+                            cve_candidate += ".pth"
                             
                     # 3. Only switch if it's different from current
-                    current_vae = self.state.get('policy_model', '') # We are using VCE as policy vision
-                    if vae_candidate != current_vae:
-                         logging.debug(f"Auto-switching Policy Vision to {vae_candidate} for policy {model_filename}")
-                         success = self.load_vae_model(vae_candidate)
+                    current_cve = self.state.get('policy_model', '') # We are using VCE as policy vision
+                    if cve_candidate != current_cve:
+                         logging.debug(f"Auto-switching Policy Vision to {cve_candidate} for policy {model_filename}")
+                         success = self.load_cve_model(cve_candidate)
                          if not success:
-                             logging.warning(f"Could not auto-load Policy Vision {vae_candidate}. Manifold might be mismatched.")
+                             logging.warning(f"Could not auto-load Policy Vision {cve_candidate}. Manifold might be mismatched.")
                          if hasattr(self, 'vision') and self.vision:
                              self.vision.groundtruth_mode = False
                              
-                         # [NEW] Also try to load the paired Background VAE
-                         if "cve_32d_" in vae_candidate:
-                             # Extract full timestamp e.g. "20260626_211623"
-                             timestamp = vae_candidate.replace('cve_32d_', '').replace('.pth', '')
-                             bg_vae_candidate = f"tinyvae-vae_{timestamp}.pth"
-                             logging.debug(f"Auto-switching Background VAE to {bg_vae_candidate}")
-                             bg_success = self.load_bg_vision_model(bg_vae_candidate)
+                         # [NEW] Load the same CVE into Background Vision for UI / Latent Space
+                         if "cve_" in cve_candidate:
+                             logging.debug(f"Auto-switching Background Vision to {cve_candidate}")
+                             bg_success = self.load_bg_vision_model(cve_candidate)
                              if not bg_success:
-                                 logging.warning(f"Could not auto-load Background VAE {bg_vae_candidate}.")
+                                 logging.warning(f"Could not auto-load Background Vision {cve_candidate}.")
                                  
             except Exception as e:
                 logging.error(f"Error checking VAE for policy: {e}")
@@ -573,30 +553,30 @@ class CognitiveEngine:
         """Refreshes goal latents using the current Vision System."""
         
         # Determine the name of the active VAE model from state or filename
-        vae_model_name = self.state.get("bvae_model", None)
-        if vae_model_name == "N/A":
-            vae_model_name = None
+        cve_model_name = self.state.get("cve_model", None)
+        if cve_model_name == "N/A":
+            cve_model_name = None
         if hasattr(self, 'active_model_path') and self.active_model_path:
             filename = os.path.basename(self.active_model_path)
             if "-dark-wall-cql_" in filename:
-                vae_model_name = filename.split("-dark-wall-cql_")[0] + ".pth"
+                cve_model_name = filename.split("-dark-wall-cql_")[0] + ".pth"
             elif "-hello_world" in filename:
-                vae_model_name = filename.split("-hello_world")[0] + ".pth"
+                cve_model_name = filename.split("-hello_world")[0] + ".pth"
             elif "-fixed_goal" in filename:
-                vae_model_name = filename.split("-fixed_goal")[0] + ".pth"
+                cve_model_name = filename.split("-fixed_goal")[0] + ".pth"
             elif "-discrete_cql" in filename:
-                vae_model_name = filename.split("-discrete_cql")[0] + ".pth"
+                cve_model_name = filename.split("-discrete_cql")[0] + ".pth"
             elif "-cql_" in filename:
-                vae_model_name = filename.split("-cql_")[0] + ".pth"
+                cve_model_name = filename.split("-cql_")[0] + ".pth"
             else:
-                vae_model_name = filename
+                cve_model_name = filename
                 
-        if not vae_model_name:
-            vae_model_name = getattr(self, 'bvae_model_name', None)
+        if not cve_model_name:
+            cve_model_name = getattr(self, 'cve_model_name', None)
                 
-        if vae_model_name and vae_model_name != "N/A":
-            vae_base = vae_model_name.replace(".pth", "")
-            goal_source_dir = os.path.join(DATA_DIR, f"{vae_base}_goals")
+        if cve_model_name and cve_model_name != "N/A":
+            cve_base = cve_model_name.replace(".pth", "")
+            goal_source_dir = os.path.join(DATA_DIR, f"{cve_base}_goals")
         else:
             goal_source_dir = os.path.join(DATA_DIR, "goals") # absolute fallback
             
@@ -607,7 +587,7 @@ class CognitiveEngine:
             # Try to infer dataset
             dataset_path = self.model_manager.infer_dataset_from_model(p)
             if dataset_path:
-                candidate = os.path.join(dataset_path, f"{vae_base}_goals" if vae_model_name else "goals")
+                candidate = os.path.join(dataset_path, f"{cve_base}_goals" if cve_model_name else "goals")
                 if os.path.exists(candidate):
                     goal_source_dir = candidate
                     logging.info(f"Refreshing goals from Active Model context: {goal_source_dir}")
@@ -655,25 +635,25 @@ class CognitiveEngine:
 
         # Attempt to load precomputed 6-Channel JSON latents to bypass 3-channel JPEG limitations
         precomputed_goals = {}
-        vae_model_name = self.state.get("bvae_model", None)
-        if not vae_model_name and hasattr(self, 'active_model_path') and self.active_model_path:
+        cve_model_name = self.state.get("cve_model", None)
+        if not cve_model_name and hasattr(self, 'active_model_path') and self.active_model_path:
             filename = os.path.basename(self.active_model_path)
             if "-dark-wall-cql_" in filename:
-                vae_model_name = filename.split("-dark-wall-cql_")[0] + ".pth"
+                cve_model_name = filename.split("-dark-wall-cql_")[0] + ".pth"
             elif "-hello_world" in filename:
-                vae_model_name = filename.split("-hello_world")[0] + ".pth"
+                cve_model_name = filename.split("-hello_world")[0] + ".pth"
             elif "-fixed_goal" in filename:
-                vae_model_name = filename.split("-fixed_goal")[0] + ".pth"
+                cve_model_name = filename.split("-fixed_goal")[0] + ".pth"
             elif "-discrete_cql" in filename:
-                vae_model_name = filename.split("-discrete_cql")[0] + ".pth"
+                cve_model_name = filename.split("-discrete_cql")[0] + ".pth"
             elif "-cql_" in filename:
-                vae_model_name = filename.split("-cql_")[0] + ".pth"
+                cve_model_name = filename.split("-cql_")[0] + ".pth"
             else:
-                vae_model_name = filename
+                cve_model_name = filename
                 
-        if vae_model_name and vae_model_name != "N/A":
-            vae_base = vae_model_name.replace(".pth", "")
-            json_path = os.path.join(DATA_DIR, f"{vae_base}_goals.json")
+        if cve_model_name and cve_model_name != "N/A":
+            cve_base = cve_model_name.replace(".pth", "")
+            json_path = os.path.join(DATA_DIR, f"{cve_base}_goals.json")
             if os.path.exists(json_path):
                 import json
                 try:

@@ -95,7 +95,7 @@ const formatModelName = (name, isActive, isOracle, data) => {
     return name
         .replace('_dreamer.pth', ' (DreamerV3)')
         .replace('-cql.pth', ' (CQL)')
-        .replace('-vae', '')
+        .replace('-cve', '')
         .replace('.pth', '')
         .replace('topological_forward_', '')
         .replace('tiny_', '')
@@ -104,7 +104,7 @@ const formatModelName = (name, isActive, isOracle, data) => {
 
 const LiveMode = ({ data, connected, sendMessage }) => {
     const [models, setModels] = useState([]);
-    const [vaes, setVaes] = useState([]);
+    const [cves, setCves] = useState([]);
 
     // Movement Timer State
     const [isMoving, setIsMoving] = useState(false);
@@ -154,8 +154,8 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                 if (data.models) {
                     setModels(data.models);
                 }
-                if (data.vaes) {
-                    setVaes(data.vaes);
+                if (data.cves) {
+                    setCves(data.cves);
                 }
             })
             .catch(err => console.error("Failed to fetch models:", err));
@@ -177,18 +177,15 @@ const LiveMode = ({ data, connected, sendMessage }) => {
         };
     }, [connected, sendMessage]);
 
-    const activeManifoldModel = (data.bvae_model && data.bvae_model !== "N/A") 
-        ? data.bvae_model 
+    const activeManifoldModel = (data.cve_model && data.cve_model !== "N/A") 
+        ? data.cve_model 
         : "N/A";
 
     // [NEW] Enforce Threshold Scaling — distance is always in continuous z_e space
     React.useEffect(() => {
         if (!connected || !data || data.latent_thresh === undefined || data.latent_thresh === null) return;
         
-        if (data.latent_thresh < 1.0) {
-            console.log(`Auto-correcting anomalously low threshold: ${data.latent_thresh} -> 2.00`);
-            sendMessage('SET_THRESHOLD', 2.00);
-        }
+        // Removed auto-correct to 2.00 since CVE uses normalized latents
     }, [connected, data.latent_thresh, activeManifoldModel, sendMessage]);
 
     return (
@@ -298,18 +295,18 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                         );
                                     })()}
 
-                                    {/* 4. VAEs */}
-                                    {vaes.map((vae) => {
-                                        const isActiveVae = data.bvae_model === vae.name;
+                                    {/* 4. CVEs */}
+                                    {cves.map((cve) => {
+                                        const isActiveCve = data.cve_model === cve.name;
                                         return (
                                             <button
-                                                key={vae.name}
+                                                key={cve.name}
                                                 onClick={() => {
-                                                    wrappedSendMessage('SET_VAE_MODEL', isActiveVae ? null : vae.name);
+                                                    wrappedSendMessage('SET_CVE_MODEL', isActiveCve ? null : cve.name);
                                                 }}
-                                                className={`px-2 py-1.5 rounded-lg text-[10px] leading-tight font-bold transition-all border shadow-sm flex items-center gap-1 ${isActiveVae ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-200' : 'bg-white border-slate-200 text-slate-500 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-600'}`}
+                                                className={`px-2 py-1.5 rounded-lg text-[10px] leading-tight font-bold transition-all border shadow-sm flex items-center gap-1 ${isActiveCve ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-200' : 'bg-white border-slate-200 text-slate-500 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-600'}`}
                                             >
-                                                <span className="break-all flex-grow text-left">VAE: {vae.name.replace('.pth', '').replace('_', ' ').toUpperCase()}</span>
+                                                <span className="break-all flex-grow text-left">CVE: {cve.name.replace('.pth', '').replace('_', ' ').toUpperCase()}</span>
                                             </button>
                                         );
                                     })}
@@ -381,16 +378,16 @@ const LiveMode = ({ data, connected, sendMessage }) => {
 
                         {/* Top: Vision System (Header + Visualization) */}
                         <div className="flex-grow min-h-[40%] flex flex-col glass-panel zone-blue rounded-xl shadow-sm overflow-hidden">
-                            {/* Header (Matches VaePanel style) */}
+                            {/* Header (Matches CvePanel style) */}
                             <div className="px-4 py-3 border-b border-indigo-100/50 flex flex-wrap items-center justify-between shrink-0 bg-white/40 gap-2">
                                 <div className="flex items-center gap-2 min-w-0">
                                     <h2 className="text-xs font-bold flex items-center gap-2 text-slate-700 uppercase tracking-wide whitespace-nowrap accent-blue">
                                         <Layers size={14} className="text-purple-600" />
                                         Latent Space
                                     </h2>
-                                    {data.bvae_model && data.bvae_model !== "N/A" && (
-                                        <span className="text-[9px] font-mono text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 truncate max-w-[300px]" title={data.bvae_model}>
-                                            {data.bvae_model}
+                                    {data.cve_model && data.cve_model !== "N/A" && (
+                                        <span className="text-[9px] font-mono text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 truncate max-w-[300px]" title={data.cve_model}>
+                                            {data.cve_model}
                                         </span>
                                     )}
                                 </div>
@@ -398,10 +395,9 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                 <div className="flex items-center gap-3 ml-auto shrink-0">
                                     {/* [NEW] Stop Threshold Dropdown */}
                                     {(data.controller && data.controller !== "N/A") && (() => {
-                                        // Distance is always in continuous z_e space
-                                        const thresholds = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0];
+                                        const thresholds = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5];
                                         
-                                        const currentVal = data.latent_thresh !== undefined && data.latent_thresh !== null ? data.latent_thresh : 3.00;
+                                        const currentVal = data.latent_thresh !== undefined && data.latent_thresh !== null ? data.latent_thresh : 0.80;
                                         
                                         // Ensure current value is in the dropdown to avoid blank selections
                                         const optionsToRender = [...thresholds];
@@ -444,7 +440,7 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                         goalCoords={(data.goal_manifold_coords && data.goal_manifold_coords.length > 0) ? data.goal_manifold_coords : (data.active_goal_coord ? [data.active_goal_coord] : [])}
                                         goalIdx={data.goal_idx || 0}
                                         matchCoord={data.match_manifold_coord}
-                                        activeVae={activeManifoldModel}
+                                        activeCve={activeManifoldModel}
 
                                         bounds={data.manifold_bounds}
                                         latentDist={data.latent_dist}
@@ -455,8 +451,8 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                 ) : (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-400 p-4">
                                         <AlertTriangle size={32} className="mb-2 opacity-50 text-amber-500" />
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">No VAE Loaded</span>
-                                        <span className="text-[9px] opacity-70">A Background VAE is required for latent visualization.</span>
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">No CVE Loaded</span>
+                                        <span className="text-[9px] opacity-70">A Background CVE is required for latent visualization.</span>
                                     </div>
                                 )}
                             </div>
