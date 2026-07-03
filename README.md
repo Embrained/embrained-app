@@ -4,6 +4,8 @@
 
 Embrained offloads all heavy compute from the robot to your local GPU over WiFi. You collect real-world data by driving the robot around your home, train vision encoders and navigation policies on your machine, then deploy them back to the robot for autonomous goal-directed navigation. No cloud. No expensive onboard hardware.
 
+For more information, visit the [Embrained website](https://embrained.ai). If you wish to get a Plexus robot, you can purchase it on the [Plexus robot Shopify page](https://admin.shopify.com/store/embrained-llc/products/10581913174325).
+
 ![Explore → Learn → Seek](docs/goal_concept.jpg)
 
 ![System Architecture](docs/system_architecture.jpg)

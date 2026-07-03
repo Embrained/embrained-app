@@ -1072,24 +1072,13 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
             # Terminal states represent ~25% of each batch
             w_positive = (num_negative / num_terminal) * (0.25 / 0.75)
             
-            # Action rebalancing: counteract FWD bias in Markov training data
-            max_action_count = max(action_dist.values()) if action_dist else 1
-            action_weights = {}
-            for act, count in action_dist.items():
-                action_weights[act] = max_action_count / count
-            logger.info(f"Action rebalancing weights: {action_weights}")
-            
             sample_weights = [1.0] * num_total
-            for idx in range(num_total):
-                act = dataset.samples[idx].get('action', 0)
-                sample_weights[idx] = action_weights.get(act, 1.0)
-            
             for idx in terminal_indices:
-                sample_weights[idx] = max(sample_weights[idx], w_positive)
+                sample_weights[idx] = w_positive
                 
             from torch.utils.data import WeightedRandomSampler
             sampler = WeightedRandomSampler(weights=sample_weights, num_samples=num_total, replacement=True)
-            logger.info(f"Enabled Batch Forcing! {num_terminal} Terminal frames + action rebalancing.")
+            logger.info(f"Enabled Batch Forcing! {num_terminal} Terminal frames (no action rebalancing).")
             dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
         else:
             logger.warning("No Terminal Rewards found. Reverting to uniform shuffling.")
@@ -1112,25 +1101,13 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
             num_negative = num_total - num_terminal
             w_positive = (num_negative / num_terminal) * (0.25 / 0.75)
             
-            # Action rebalancing
-            action_dist = {}
-            for s in dataset.samples:
-                act = s.get('action', 0)
-                action_dist[act] = action_dist.get(act, 0) + 1
-            max_action_count = max(action_dist.values()) if action_dist else 1
-            action_weights = {act: max_action_count / count for act, count in action_dist.items()}
-            logger.info(f"Action rebalancing weights: {action_weights}")
-            
             sample_weights = [1.0] * num_total
-            for idx in range(num_total):
-                act = dataset.samples[idx].get('action', 0)
-                sample_weights[idx] = action_weights.get(act, 1.0)
             for idx in terminal_indices:
-                sample_weights[idx] = max(sample_weights[idx], w_positive)
+                sample_weights[idx] = w_positive
             
             from torch.utils.data import WeightedRandomSampler
             sampler = WeightedRandomSampler(weights=sample_weights, num_samples=num_total, replacement=True)
-            logger.info(f"Enabled Batch Forcing! {num_terminal} terminal frames + action rebalancing.")
+            logger.info(f"Enabled Batch Forcing! {num_terminal} terminal frames (no action rebalancing).")
             dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
         else:
             logger.warning("No terminal states found via classifier. Using uniform shuffling.")
