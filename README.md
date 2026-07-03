@@ -1,6 +1,6 @@
 # Embrained
 
-**Train and deploy neural navigation agents on low-cost robots - locally, privately, on your own PC.**
+**Train and deploy neural navigation agents on low-cost robots — locally, privately, on your own PC.**
 
 Embrained offloads all heavy compute from the robot to your local GPU over WiFi. You collect real-world data by driving the robot around your home, train vision encoders and navigation policies on your machine, then deploy them back to the robot for autonomous goal-directed navigation. No cloud. No expensive onboard hardware.
 
@@ -19,7 +19,7 @@ cd embrained-app
 
 ### 2. Connect to Robot
 
-1. Power on your Plexus robot. 
+1. Power on your Plexus robot.
 2. Wait for the tally light to blink at 1 Hz, indicating it is ready to connect.
 3. Connect your computer to the robot's WiFi access point (SSID typically looks like `Plexus_XXXX`).
 4. The tally light will change to steady ON when your computer has successfully connected to the robot.
@@ -33,84 +33,115 @@ Run the setup script to create an isolated virtual environment with Python 3.12,
 
 Open [http://localhost:8080](http://localhost:8080) to access the dashboard for teleoperation, live telemetry, and autonomy control.
 
-### 4. Collect Data
+---
+
+## Training Pipeline
+
+All training scripts live in the `seek/` folder and should be run from the `embrained-app` root directory. Activate your virtual environment first (`venv\Scripts\activate.bat` on Windows, `source venv/bin/activate` on Mac/Linux).
+
+The pipeline trains a goal-seeking reflex: given a set of example images showing what "at the goal" looks like (e.g. close-ups of your sofa), the robot learns to navigate there from anywhere in the environment.
+
+### Step 1 — Collect Exploration Data
 
 Use the dashboard to drive the robot and record training data:
 
-1. Drive the robot around using **manual control** (keyboard/gamepad) or start an **autonomous controller** to explore automatically.
-2. Press the **REC** button to begin recording. The robot saves camera frames, motor commands, and sensor readings as it moves.
-3. Press **REC** again to stop. Each recording session is saved to `data/markov_<timestamp>/` inside the project directory.
+1. Drive the robot around using **manual control** (keyboard/gamepad) or start an **autonomous exploration controller** (Markov) to explore automatically.
+2. Press **REC** to begin recording. The robot saves camera frames, motor commands, and sensor readings as it moves.
+3. Press **REC** again to stop. Each session is saved to `data/markov_<timestamp>/`.
 
-Record several sessions covering your environment from different starting positions. More diverse data → better navigation.
+Record several sessions covering your environment from different starting positions. More diverse data produces better navigation.
 
-### 5. Train
+### Step 2 — Prepare Dataset
 
-Activate your virtual environment first (`venv\Scripts\activate.bat` on Windows, `source venv/bin/activate` on Mac/Linux), then run from the project root.
-
-There are two training options:
-
-#### Option A - Fixed-Goal Navigation (Simplest)
-
-Trains a policy that drives the robot to **one specific location** from anywhere. This is the quickest way to get a working autonomous agent.
-
-**Step 1.** Consolidate raw recordings into a training dataset:
+Consolidate all recorded sessions into a single pooled transition file:
 
 ```bash
-python cognitive-engine/scripts/prepare_dataset.py
+python seek/prepare_dataset.py
 ```
 
-**Step 2.** Create a `data/goals/` folder and copy **5-30 camera frames** that show your desired goal location (the place the robot should drive to). These should be images the robot captured while at or near the goal - you can find them inside your recording folders under `data/markov_<timestamp>/images/`.
+This scans every `data/markov_*/` folder, extracts image–action–image transitions, and writes `data/all_transitions.json`.
+
+### Step 3 — Train the CVE
+
+Train the Contrastive Visuomotor Encoder (CVE), a general-purpose vision backbone that compresses 64×64 camera frames into 32-dimensional latent state vectors:
 
 ```bash
-mkdir data/goals
-# Copy goal images into data/goals/  (e.g. .jpg or .png frames showing the target location)
+python seek/train_cve.py
 ```
 
-**Step 3.** Train the Contrastive Visuomotor Encoder (CVE) to compress camera frames into latent state vectors:
+The CVE is goal-agnostic — it learns the structure of your environment from exploration data alone. You only need to train it once; the same encoder is reused for every goal you define later. The trained checkpoint is saved to `data/cve_32d_<timestamp>.pth`.
+
+### Step 4 — Create Goal Images
+
+Create a subfolder inside `data/` named after your goal and fill it with approximately 100 close-up photographs showing what "at the goal" looks like from the robot's perspective:
 
 ```bash
-python cognitive-engine/backend/training/train_cve.py
+mkdir data/sofa
+# Add ~100 close-up images of the sofa to data/sofa/
 ```
 
-**Step 4.** Train the fixed-goal CQL navigation policy:
+These images should show the target object filling most of the frame, as the robot would see it when it has successfully arrived. You can pull frames from your recorded sessions (`data/markov_*/images/`) or take new photographs manually.
+
+Repeat this step for each goal you want the robot to seek (e.g. `data/tv/`, `data/kitchen/`).
+
+### Step 5 — Train the Goal Classifier
+
+Train a binary CNN that distinguishes "at the goal" from "not at the goal." This classifier is used only during CQL training to shape the reward signal — it is discarded at inference time.
 
 ```bash
-python cognitive-engine/backend/training/train_cve_cql_fixed_goal.py
+python seek/train_classifier.py sofa
 ```
 
-The script reads your goal images from `data/goals/`, uses the CVE to automatically detect high-precision terminal states via nearest-neighbor clustering, and trains an offline RL policy using CVE representations that maps observations to motor commands to drive toward the target.
+Replace `sofa` with your goal folder name. The trained classifier is saved to `data/sofa_classifier.pth`. Training curves and validation metrics are saved to `images/`.
 
-#### Option B - Goal-Conditioned Navigation (Any Goal ↔ Any Start)
+### Step 6 — Train the CQL Policy
 
-Trains a policy that can navigate to **any goal from any location**. Once deployed, you can select goals interactively through the **Latent Space** panel in the dashboard.
-
-**Step 1.** Consolidate raw recordings into a training dataset (skip if already done):
+Train the Conservative Q-Learning (CQL) navigation policy. This is the model that actually runs on the robot — a small MLP that maps 32-dim CVE latent vectors to motor commands:
 
 ```bash
-python cognitive-engine/scripts/prepare_dataset.py
+python seek/train_seek_cql.py sofa
 ```
 
-**Step 2.** Train the CVE:
+The script automatically loads the latest CVE checkpoint and the goal classifier, then trains an offline RL policy using classifier-shaped rewards. The output model is saved to `data/cve_32d_<timestamp>-sofa_seek_cql_model.pth`.
+
+### Step 7 — Deploy and Test
+
+1. Power on your Plexus robot and verify its WiFi connection.
+2. Launch the app (`start.bat` or `./start.sh`).
+3. Open the **Autonomy Panel** in the dashboard.
+4. Select your seek model (e.g. `SOFA-SEEK CQL`) from the model dropdown.
+5. Click **Start Autonomy**.
+
+The robot will navigate toward the goal in real time. The latent space panel shows the robot's current position and the goal target marker. To test robustness, manually pick up and reposition the robot at random locations — it should re-orient and drive back to the goal each time.
+
+### Step 8 — Evaluate Performance (Offline)
+
+After running a displacement trial session (repeatedly moving the robot to random positions and letting it navigate back), evaluate the recorded data offline:
 
 ```bash
-python cognitive-engine/backend/training/train_cve.py
+python seek/evaluate_navigation_trials.py markov_<session_name> --goal sofa
 ```
 
-**Step 3.** Train the goal-conditioned CQL policy using Hindsight Experience Replay:
+The evaluator automatically segments the recording into individual trials by detecting sudden jumps in the latent embedding (manual displacement events), then scores each trial on whether the robot reached the goal (classifier confidence > 0.85 at the final frame with an intentional stop action).
+
+Output:
+- `data/trial_results.json` — per-trial metrics (steps to goal, final confidence, success/fail)
+- `images/trial_results.png` — summary plot with step distributions and success rate
+
+---
+
+## Adding More Goals
+
+The CVE backbone is shared across all goals. To train a new goal, you only need to repeat Steps 4–6:
 
 ```bash
-python cognitive-engine/backend/training/train_cve_cql_goal_conditioned.py
+mkdir data/tv
+# Add ~100 close-up TV images to data/tv/
+python seek/train_classifier.py tv
+python seek/train_seek_cql.py tv
 ```
 
-This uses [Hindsight Experience Replay (HER)](https://arxiv.org/abs/1707.01495) to relabel every trajectory with multiple future frames as goals, producing a policy that generalizes across all locations in your environment. At inference time, click any point in the **Latent Space** panel to set the goal - the robot will navigate there autonomously.
-
-### 6. Deploy
-
-1. Power on your Plexus robot and verify its WiFi connection in the app.
-2. Open the **Autonomy Panel**, select your trained models, and click **Start Autonomy**.
-
-The robot navigates to goal locations in real time, running entirely on your local hardware.
-
+Each goal produces its own classifier and CQL policy. You can switch between them at runtime from the model dropdown in the dashboard.
 
 ---
 
@@ -123,16 +154,14 @@ The default install is CPU-only. For faster training with an NVIDIA GPU:
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
-
-
 ---
 
 ## Community
 
-Share your trained weights, datasets, and demo videos on our [Discord](https://discord.com/channels/1487132795833684228/1487132796920004640). Contributed model weights feed into a federated **Model Soup** - enabling generalization across diverse home environments without sharing raw data.
+Share your trained weights, datasets, and demo videos on our [Discord](https://discord.com/channels/1487132795833684228/1487132796920004640). Contributed model weights feed into a federated **Model Soup** — enabling generalization across diverse home environments without sharing raw data.
 
 ## License
 
-- **Software** - [GPLv3](LICENSE). Open to audit, modify, and contribute.
-- **Your locally-trained weights** - 100% yours, no restrictions.
-- **Pre-trained / aggregated weights** distributed by Embrained - governed by the Embrained Open-Weights EULA (non-commercial use permitted; commercial use requires a license). See [LICENSE](LICENSE) for full terms.
+- **Software** — [GPLv3](LICENSE). Open to audit, modify, and contribute.
+- **Your locally-trained weights** — 100% yours, no restrictions.
+- **Pre-trained / aggregated weights** distributed by Embrained — governed by the Embrained Open-Weights EULA (non-commercial use permitted; commercial use requires a license). See [LICENSE](LICENSE) for full terms.

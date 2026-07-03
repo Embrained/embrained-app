@@ -89,6 +89,12 @@ const formatModelName = (name, isActive, isOracle, data) => {
     else if (name.includes('-fixed_goal_oracle_control.pth')) baseName = 'ORACLE CONTROL (' + name.split('_')[2] + ')';
     else if (name.includes('-fixed_goal_markov_control.pth')) baseName = 'MARKOV CONTROL (' + name.split('_')[2] + ')';
     else if (name.includes('-fixed_goal_model.pth')) baseName = 'FIXED-GOAL BC (' + name.split('_')[2] + ')';
+    else if (name.includes('_seek_cql')) {
+        // e.g., cve_32d_...-sofa_seek_cql_model.pth -> SOFA-SEEK CQL
+        const seekMatch = name.match(/-(\w+)_seek_cql/);
+        if (seekMatch) baseName = seekMatch[1].toUpperCase() + '-SEEK CQL';
+        else baseName = 'SEEK CQL';
+    }
     
     return baseName + getEvalSuffix(isActive, data);
     
@@ -446,7 +452,7 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                         latentDist={data.latent_dist}
                                         latentThreshold={data.latent_thresh}
                                         visualizationMode='default'
-                                        onPointClick={(data.controller && data.controller.includes('fixed_goal')) ? undefined : (idx) => wrappedSendMessage('SET_MANIFOLD_GOAL', { index: idx })}
+                                        onPointClick={(data.controller && (data.controller.includes('fixed_goal') || data.controller.includes('_seek_cql'))) ? undefined : (idx) => wrappedSendMessage('SET_MANIFOLD_GOAL', { index: idx })}
                                     />
                                 ) : (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-400 p-4">

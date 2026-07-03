@@ -31,7 +31,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from PIL import Image
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cognitive-engine"))
 from config import IMG_H, IMG_W, DATA_DIR, ACTION_PWM_MAP
 from modules.spatial_model import ContrastiveVisuomotorEncoder
 from backend.train_vae import export_global_latents

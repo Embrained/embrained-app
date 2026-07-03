@@ -85,6 +85,22 @@ class SpatialCQLDataset(Dataset):
         
         self.image_cache = {}
         
+        # [NEW] Load GoalClassifier for *_seek goal types (e.g. sofa_seek, tv_seek)
+        self.goal_classifier = None
+        self.classifier_device = device
+        if self.goal_type and self.goal_type.endswith('_seek') and self.goal_type not in ['ir_wall_seeking', 'dark_wall_seek']:
+            classifier_name = self.goal_type.replace('_seek', '')
+            classifier_path = os.path.join(data_root, f'{classifier_name}_classifier.pth')
+            if os.path.exists(classifier_path):
+                try:
+                    from modules.goal_classifier import GoalClassifier
+                    self.goal_classifier = GoalClassifier.load_from_checkpoint(classifier_path, device=str(device))
+                    logger.info(f"Loaded GoalClassifier for '{classifier_name}' from {classifier_path}")
+                except Exception as e:
+                    logger.error(f"Failed to load GoalClassifier: {e}")
+            else:
+                logger.error(f"GoalClassifier not found at {classifier_path}. Train it first!")
+        
         logger.debug("SpatialCQLDataset: Verifying data integrity (checking file paths)...")
         
         missing_count = 0
@@ -115,7 +131,8 @@ class SpatialCQLDataset(Dataset):
                         
                     # [FIX] If the goal type does not utilize HER goal contexts, 
                     # we only need ONE copy of the transition, not MAX_HER_HORIZON copies!
-                    if self.goal_type in ['dark_wall_seek', 'group_goal', 'discrete_exact']:
+                    is_seek_type = self.goal_type and self.goal_type.endswith('_seek') and self.goal_type not in ['ir_wall_seeking', 'dark_wall_seek']
+                    if self.goal_type in ['dark_wall_seek', 'group_goal', 'discrete_exact'] or is_seek_type:
                         if goal_idx > start_idx + 1:
                             continue
                         
@@ -183,6 +200,28 @@ class SpatialCQLDataset(Dataset):
                                 next_node['luminance_reward'] = -0.5
                         reward = next_node['luminance_reward']
                         is_local_done = False
+                    elif self.goal_type and self.goal_type.endswith('_seek') and self.goal_type not in ['ir_wall_seeking', 'dark_wall_seek'] and self.goal_classifier is not None:
+                        # [NEW] Classifier-based reward for *_seek goal types
+                        if 'classifier_reward' not in next_node:
+                            img_tensor = self._load_img(next_node)
+                            if img_tensor is not None and img_tensor.shape[0] == 3:
+                                import torch as _torch
+                                with _torch.no_grad():
+                                    p = self.goal_classifier.predict_proba(
+                                        img_tensor.unsqueeze(0).to(self.classifier_device)
+                                    ).item()
+                                # Continuous reward: map [0,1] -> [-1, +1]
+                                next_node['classifier_reward'] = (p - 0.5) * 2.0
+                                next_node['classifier_done'] = p > 0.85
+                                next_node['classifier_prob'] = p
+                            else:
+                                next_node['classifier_reward'] = -0.5
+                                next_node['classifier_done'] = False
+                                next_node['classifier_prob'] = 0.0
+                        reward = next_node['classifier_reward']
+                        is_local_done = next_node['classifier_done']
+                        if is_local_done:
+                            reward = 3.0  # Strong terminal bonus
                     elif self.goal_type == 'group_goal' or self.goal_type == 'discrete_exact':
                         # Placeholder, dynamically evaluated in __getitem__ using precalculated latents
                         reward = 0.0
@@ -228,8 +267,9 @@ class SpatialCQLDataset(Dataset):
                     curr_actions_stack = [get_historical_action(start_idx)]
                     next_actions_stack = [get_historical_action(next_idx)]
                     
-                    # [NEW] Enforce pure reflex isolation for dark_wall_seek
-                    effective_goal_node = None if self.goal_type in ['dark_wall_seek', 'group_goal', 'discrete_exact'] else goal_node
+                    # [NEW] Enforce pure reflex isolation for dark_wall_seek and *_seek types
+                    is_seek_goal = self.goal_type and self.goal_type.endswith('_seek') and self.goal_type not in ['ir_wall_seeking', 'dark_wall_seek']
+                    effective_goal_node = None if self.goal_type in ['dark_wall_seek', 'group_goal', 'discrete_exact'] or is_seek_goal else goal_node
                     
                     self.samples.append({
                         'curr_nodes': curr_nodes_stack,
@@ -470,6 +510,16 @@ class SpatialCQLDataset(Dataset):
             else:
                 final_reward = torch.tensor(0.0, dtype=torch.float)
                 final_done = torch.tensor(0.0, dtype=torch.float)
+
+        # [NEW] *_seek goal type: rewards are pre-computed during dataset construction
+        # but we force action=5 (INTENTIONAL_STOP) at terminal states
+        _is_seek = getattr(self, 'goal_type', None) and self.goal_type.endswith('_seek') and self.goal_type not in ['ir_wall_seeking', 'dark_wall_seek']
+        if _is_seek and getattr(self, 'terminal_indices_set', None) is not None:
+            if idx in self.terminal_indices_set:
+                final_reward = torch.tensor(3.0, dtype=torch.float)  # Strong terminal bonus
+                final_done = torch.tensor(1.0, dtype=torch.float)
+                final_action = 5  # INTENTIONAL_STOP
+
 
         if getattr(self, 'goal_type', None) == 'discrete_exact' and getattr(self, 'exact_latent', None) is not None:
             # For discrete_exact, terminal assignment is now strictly controlled by the HER phase tagging
@@ -1043,6 +1093,47 @@ def train(data_root, num_epochs=20, stop_event=None, progress_callback=None, vae
             dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
         else:
             logger.warning("No Terminal Rewards found. Reverting to uniform shuffling.")
+            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    elif goal_type and goal_type.endswith('_seek') and goal_type not in ['ir_wall_seeking', 'dark_wall_seek']:
+        # [NEW] Classifier-based terminal detection for *_seek goal types
+        logger.info(f"Identifying terminal states for '{goal_type}' using classifier rewards...")
+        terminal_indices = []
+        for idx in range(len(dataset)):
+            sample = dataset.samples[idx]
+            if sample.get('done', False):
+                terminal_indices.append(idx)
+        
+        dataset.terminal_indices_set = set(terminal_indices)
+        num_terminal = len(terminal_indices)
+        num_total = len(dataset)
+        logger.info(f"Found {num_terminal}/{num_total} terminal states ({100*num_terminal/max(num_total,1):.1f}%) via classifier")
+        
+        if num_terminal > 0:
+            num_negative = num_total - num_terminal
+            w_positive = (num_negative / num_terminal) * (0.25 / 0.75)
+            
+            # Action rebalancing
+            action_dist = {}
+            for s in dataset.samples:
+                act = s.get('action', 0)
+                action_dist[act] = action_dist.get(act, 0) + 1
+            max_action_count = max(action_dist.values()) if action_dist else 1
+            action_weights = {act: max_action_count / count for act, count in action_dist.items()}
+            logger.info(f"Action rebalancing weights: {action_weights}")
+            
+            sample_weights = [1.0] * num_total
+            for idx in range(num_total):
+                act = dataset.samples[idx].get('action', 0)
+                sample_weights[idx] = action_weights.get(act, 1.0)
+            for idx in terminal_indices:
+                sample_weights[idx] = max(sample_weights[idx], w_positive)
+            
+            from torch.utils.data import WeightedRandomSampler
+            sampler = WeightedRandomSampler(weights=sample_weights, num_samples=num_total, replacement=True)
+            logger.info(f"Enabled Batch Forcing! {num_terminal} terminal frames + action rebalancing.")
+            dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
+        else:
+            logger.warning("No terminal states found via classifier. Using uniform shuffling.")
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     else:
         logger.debug("Using standard shuffling (Uniform distribution) for accurate Q-value backpropagation.")
