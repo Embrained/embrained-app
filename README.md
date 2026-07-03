@@ -4,6 +4,10 @@
 
 Embrained offloads all heavy compute from the robot to your local GPU over WiFi. You collect real-world data by driving the robot around your home, train vision encoders and navigation policies on your machine, then deploy them back to the robot for autonomous goal-directed navigation. No cloud. No expensive onboard hardware.
 
+![Explore → Learn → Seek](docs/goal_concept.jpg)
+
+![System Architecture](docs/system_architecture.jpg)
+
 ## Quick Start
 
 ### 1. Install
@@ -36,6 +40,8 @@ Open [http://localhost:8080](http://localhost:8080) to access the dashboard for 
 ---
 
 ## Training Pipeline
+
+![Seek Training Pipeline](docs/pipeline_overview.jpg)
 
 All training scripts live in the `seek/` folder and should be run from the `embrained-app` root directory. Activate your virtual environment first (`venv\Scripts\activate.bat` on Windows, `source venv/bin/activate` on Mac/Linux).
 
