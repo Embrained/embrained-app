@@ -374,6 +374,8 @@ class CognitiveEngine:
                         cve_candidate = model_filename.split("-discrete_cql")[0] + ".pth"
                     elif "-cql_" in model_filename:
                         cve_candidate = model_filename.split("-cql_")[0] + ".pth"
+                    elif "_seek" in model_filename:
+                        cve_candidate = model_filename.split("-")[0] + ".pth"
                     else:
                         # Fallback for old models
                         cve_candidate = model_filename.replace("-cql", "")
@@ -399,6 +401,10 @@ class CognitiveEngine:
                                  
             except Exception as e:
                 logging.error(f"Error checking VAE for policy: {e}")
+
+            if self.planner:
+                if hasattr(self, 'vision') and self.vision and getattr(self.vision, 'encoder', None) is not None:
+                    self.planner.encoder = self.vision.encoder
 
             if self.planner and self.planner.load_model(found_path):
                 try:
@@ -1355,7 +1361,7 @@ class CognitiveEngine:
             if active_manifold == self.bg_manifold:
                 fallback_latent = getattr(self.bg_vision, 'continuous_goal', None)
             else:
-                if m_name and ('group-goal' in m_name or 'group_goal' in m_name or 'fixed_goal' in m_name or 'discrete_cql' in m_name):
+                if m_name and ('group-goal' in m_name or 'group_goal' in m_name or 'fixed_goal' in m_name or 'discrete_cql' in m_name or '_seek_cql' in m_name):
                     # Prefer continuous goal embedding for discrete architectures (matches PCA dim)
                     if hasattr(self, 'planner'):
                         continuous_goal = getattr(self.planner, 'continuous_goal', None)

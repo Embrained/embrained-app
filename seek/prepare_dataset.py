@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 # Add project root to sys.path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cognitive-engine"))
 
 from backend.training import TrainingPipeline
 from backend.services.datasets import DatasetService

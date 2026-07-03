@@ -298,6 +298,10 @@ class Planner:
                 if os.path.exists(goal_image_path):
                     self.goal_image_path = goal_image_path
                     logging.info(f"Successfully bound nearest goal image visual wrapper from {os.path.basename(goal_image_path)}")
+                
+                # [NEW] For *_seek_cql models: compute centroid from goal directory + find nearest image
+                if '_seek_cql' in os.path.basename(model_path) and self.mu_goal is None:
+                    self._load_seek_goal_centroid(model_path)
                     
                 return True
             else:
@@ -307,6 +311,101 @@ class Planner:
         except Exception as e:
             logging.error(f"Failed to load model {model_path}: {e}")
             return False
+
+    def _load_seek_goal_centroid(self, model_path):
+        """
+        For *_seek_cql models: compute the goal centroid from the goal directory
+        (e.g., data/sofa/ for sofa_seek_cql) using the CVE encoder, and find the
+        closest image for the goal inset display.
+        """
+        import re, glob
+        import torch
+        from torchvision import transforms
+        from PIL import Image
+        
+        # Extract goal name from model filename: "...-sofa_seek_cql_model.pth" -> "sofa"
+        basename = os.path.basename(model_path)
+        match = re.search(r'-(\w+)_seek_cql', basename)
+        if not match:
+            logging.warning(f"Could not extract goal name from seek model: {basename}")
+            return
+        
+        goal_name = match.group(1)  # e.g., "sofa"
+        data_dir = os.path.dirname(model_path)
+        goal_dir = os.path.join(data_dir, goal_name)
+        
+        if not os.path.isdir(goal_dir):
+            logging.warning(f"Goal directory not found: {goal_dir}")
+            return
+        
+        goal_images = sorted(glob.glob(os.path.join(goal_dir, '*.jpg')))
+        if not goal_images:
+            logging.warning(f"No goal images found in {goal_dir}")
+            return
+        
+        logging.info(f"Computing {goal_name} centroid from {len(goal_images)} images in {goal_dir}...")
+        
+        try:
+            # Use the CVE encoder to encode all goal images
+            encoder = getattr(self, 'encoder', None)
+            if encoder is None:
+                logging.warning("No CVE encoder available — cannot compute seek centroid")
+                return
+            
+            device = next(encoder.parameters()).device
+            img_dim = 64  # Standard for TinyVAE
+            transform = transforms.Compose([
+                transforms.Resize((img_dim, img_dim)),
+                transforms.ToTensor(),
+            ])
+            
+            all_latents = []
+            batch_size = 32
+            
+            for i in range(0, len(goal_images), batch_size):
+                batch_paths = goal_images[i:i+batch_size]
+                tensors = []
+                for p in batch_paths:
+                    try:
+                        img = Image.open(p).convert('RGB')
+                        tensors.append(transform(img))
+                    except Exception:
+                        continue
+                if tensors:
+                    batch_tensor = torch.stack(tensors).to(device)
+                    with torch.no_grad():
+                        z = encoder.encode(batch_tensor)
+                    all_latents.append(z.cpu().numpy())
+            
+            if not all_latents:
+                logging.error("Failed to encode any goal images")
+                return
+            
+            latents = np.concatenate(all_latents, axis=0)
+            centroid = latents.mean(axis=0)
+            self.mu_goal = centroid
+            logging.info(f"Computed {goal_name} centroid from {len(latents)} images (latent dim={centroid.shape[0]})")
+            
+            # Save centroid for future fast loading
+            centroid_save_path = model_path.replace("model", "centroid").replace(".pth", ".npy")
+            np.save(centroid_save_path, centroid)
+            logging.info(f"Saved {goal_name} centroid to {os.path.basename(centroid_save_path)}")
+            
+            # Find the closest image to the centroid for the goal inset
+            distances = np.linalg.norm(latents - centroid, axis=1)
+            nearest_idx = int(np.argmin(distances))
+            nearest_path = goal_images[nearest_idx]
+            
+            # Copy nearest image to the expected goal_image location
+            goal_image_dest = model_path.replace("model", "goal_image").replace(".pth", ".jpg")
+            import shutil
+            shutil.copy2(nearest_path, goal_image_dest)
+            self.goal_image_path = goal_image_dest
+            logging.info(f"Bound nearest {goal_name} image as goal inset: {os.path.basename(nearest_path)} (dist={distances[nearest_idx]:.4f})")
+            
+        except Exception as e:
+            logging.error(f"Failed to compute seek goal centroid: {e}")
+
 
     def _load_policy(self, specific_path=None):
         """
@@ -441,17 +540,18 @@ class Planner:
         else:
             self.z_smoothed = alpha * z_current + (1.0 - alpha) * self.z_smoothed
 
-        # [NEW] Check if dark_wall pure reflex model, or group-goal
+        # [NEW] Check if dark_wall pure reflex model, group-goal, or classifier-seek model
         m_name = getattr(self, 'model_name', '')
         is_pure_reflex = m_name is not None and ('dark_wall' in m_name or 'dark-wall' in m_name or 'ir_reflex' in m_name)
         is_group_goal = m_name is not None and ('group-goal' in m_name or 'group_goal' in m_name or 'fixed_goal' in m_name or 'discrete_cql' in m_name)
+        is_seek_model = m_name is not None and '_seek_cql' in m_name  # e.g. sofa_seek_cql, tv_seek_cql
 
         active_goal_dict = None
         goal_idx = -1
         z_goal = None
         
         # 2. Decide Active Goal (No cyclic patrol behavior)
-        if not is_pure_reflex:
+        if not is_pure_reflex and not is_seek_model:
             if not self.goals and (not is_group_goal or getattr(self, 'mu_goal', None) is None):
                 # Do not attempt to drive if no valid goal is set
                 return 0, 10.0, dist_threshold if dist_threshold is not None else 0.0, 0, None, False
@@ -470,6 +570,10 @@ class Planner:
                     z_goal = z_goal.cpu().detach().numpy()
                 z_goal = np.array(z_goal).squeeze()
                 goal_idx = self.current_goal_idx
+        elif is_seek_model and getattr(self, 'mu_goal', None) is not None:
+            z_goal = self.mu_goal
+            active_goal_dict = {'latent': self.mu_goal}
+            goal_idx = 0
         
         # 2b. Distance Check (Euclidean distance to the Central Goal Envelope)
         if not is_pure_reflex and z_goal is not None:
