@@ -79,11 +79,21 @@ class DatasetService:
                     import math
                     best_action = 0
                     best_dist = float('inf')
-                    for act_id, (map_l, map_r) in ACTION_PWM_MAP.items():
-                        dist = math.hypot(l_val - map_l, r_val - map_r)
-                        if dist < best_dist:
-                            best_dist = dist
-                            best_action = act_id
+                    
+                    parsed_action_id = False
+                    if 'action_id' in row and not pd.isna(row['action_id']) and row['action_id'] != "":
+                        try:
+                            best_action = int(float(row['action_id']))
+                            parsed_action_id = True
+                        except ValueError:
+                            pass
+                            
+                    if not parsed_action_id:
+                        for act_id, (map_l, map_r) in ACTION_PWM_MAP.items():
+                            dist = math.hypot(l_val - map_l, r_val - map_r)
+                            if dist < best_dist:
+                                best_dist = dist
+                                best_action = act_id
                             
                     transitions.append({
                         'format': 'markov',

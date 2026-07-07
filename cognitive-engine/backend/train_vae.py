@@ -120,7 +120,7 @@ def loss_function(recon_x, x, mu, logvar, beta=1.0):
     return MSE + beta * KLD, MSE, KLD
 
 
-def train(data_root=DATA_DIR, num_epochs=100, stop_event=None, progress_callback=None, batch_size=128, learning_rate=1e-5, beta=0.5, model_size='medium', selected_datasets=None, model_filename=None, architecture='continuous', latent_dim=32):
+def train(data_root=DATA_DIR, num_epochs=100, stop_event=None, progress_callback=None, batch_size=128, learning_rate=1e-5, beta=0.5, model_size='large', selected_datasets=None, model_filename=None, architecture='continuous', latent_dim=32):
     
     logger.info(f"Input Resolution: {IMG_W}x{IMG_H}")
     logger.info(f"Hyperparameters: Batch Size={batch_size}, LR={learning_rate}, Size={model_size}, Topology={architecture}, Latent={latent_dim}, BETA={beta}, Warmup_Epochs={BETA_WARMUP_EPOCHS}")

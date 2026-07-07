@@ -57,7 +57,7 @@ def load_cve_encoder(data_root, device):
 
 
 def segment_trials(session_data, embeddings, max_steps=50, 
-                   displacement_threshold=3.0):
+                   displacement_threshold=1.0):
     """Segment a continuous recording session into individual navigation trials.
     
     Trial boundaries are detected by:
@@ -78,14 +78,20 @@ def segment_trials(session_data, embeddings, max_steps=50,
     current_trial_start = 0
     n = len(session_data)
     
+    # State machine for trial segmentation
+    # state can be 'in_trial' or 'waiting_for_displacement'
+    state = 'in_trial'
+    
     i = 0
     while i < n:
-        # Check if this is a displacement boundary (start of new trial)
+        # Check for displacement
         if i > 0:
             dist = np.linalg.norm(embeddings[i] - embeddings[i-1])
+            if dist > 1.0:
+                print(f"Frame {i}: Distance from previous = {dist:.2f}")
             if dist > displacement_threshold:
-                # Manual displacement detected — end previous trial if active
-                if current_trial_start < i:
+                # Manual displacement detected — start a new trial
+                if state == 'in_trial' and current_trial_start < i:
                     trials.append({
                         'start_idx': current_trial_start,
                         'end_idx': i - 1,
@@ -93,27 +99,29 @@ def segment_trials(session_data, embeddings, max_steps=50,
                         'end_reason': 'timeout',  # Previous trial didn't stop
                     })
                 current_trial_start = i
+                state = 'in_trial'
         
-        # Check for INTENTIONAL_STOP
-        action = session_data[i].get('macro_action', 0)
-        if action == 5:
-            trials.append({
-                'start_idx': current_trial_start,
-                'end_idx': i,
-                'steps': i - current_trial_start + 1,
-                'end_reason': 'stop',
-            })
-            current_trial_start = i + 1
-        
-        # Check for timeout
-        elif (i - current_trial_start) >= max_steps:
-            trials.append({
-                'start_idx': current_trial_start,
-                'end_idx': i,
-                'steps': i - current_trial_start + 1,
-                'end_reason': 'timeout',
-            })
-            current_trial_start = i + 1
+        if state == 'in_trial':
+            # Check for INTENTIONAL_STOP
+            action = session_data[i].get('macro_action', 0)
+            if action == 5:
+                trials.append({
+                    'start_idx': current_trial_start,
+                    'end_idx': i,
+                    'steps': i - current_trial_start + 1,
+                    'end_reason': 'stop',
+                })
+                state = 'waiting_for_displacement'
+            
+            # Check for timeout
+            elif (i - current_trial_start) >= max_steps:
+                trials.append({
+                    'start_idx': current_trial_start,
+                    'end_idx': i,
+                    'steps': i - current_trial_start + 1,
+                    'end_reason': 'timeout',
+                })
+                state = 'waiting_for_displacement'
         
         i += 1
     

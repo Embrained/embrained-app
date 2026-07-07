@@ -1584,7 +1584,8 @@ class CognitiveEngine:
                              ping_raw=self.comms.telemetry.get('ping', '0') if (self.comms and hasattr(self.comms, 'telemetry')) else '0',
                              motor_str=explicit_cmd_str,
                              active_controller=kwargs.get('active_controller_str', 'unknown'),
-                             webcam_frame=webcam_frame
+                             webcam_frame=webcam_frame,
+                             action_id=target_action
                          )
                          
 

@@ -146,7 +146,7 @@ class TrainingPipeline:
                             logger.warning(f"Failed to generate automated telemetry analytics: {plt_err}")
                             
                     except Exception as eval_err:
-                        logger.warning(f"Telemetry extraction skipped or failed (Likely no webcam overhead frames available): {eval_err}")
+                        logger.debug(f"Telemetry extraction skipped or failed (Likely no webcam overhead frames available): {eval_err}")
                     
                 return {
                     "status": "success", 
@@ -167,7 +167,7 @@ class TrainingPipeline:
             self.lock.release()
 
     
-    def run_vae_pipeline(self, num_epochs=20, stop_event=None, progress_callback=None, batch_size=64, learning_rate=1e-4, beta=0.5, model_size='small', selected_datasets=None, model_filename=None, architecture='continuous', latent_dim=128):      
+    def run_vae_pipeline(self, num_epochs=20, stop_event=None, progress_callback=None, batch_size=64, learning_rate=1e-4, beta=0.5, model_size='large', selected_datasets=None, model_filename=None, architecture='continuous', latent_dim=128):      
         """
         Executes VAE Training + Manifold Regeneration.
         """
@@ -345,7 +345,7 @@ class TrainingPipeline:
         except Exception as e:
             logger.error(f"Manifold regeneration failed: {e}")
 
-    def run_latentslam_pipeline(self, num_epochs=20, stop_event=None, progress_callback=None, batch_size=64, learning_rate=1e-4, beta=2.0, transition_loss_weight=1.0, contrastive_weight=0.0, architecture="continuous", model_size="small", selected_datasets=None, model_filename=None, image_size=64, num_layers=4, latent_dim=128):
+    def run_latentslam_pipeline(self, num_epochs=20, stop_event=None, progress_callback=None, batch_size=64, learning_rate=1e-4, beta=2.0, transition_loss_weight=1.0, contrastive_weight=0.0, architecture="continuous", model_size="large", selected_datasets=None, model_filename=None, image_size=64, num_layers=4, latent_dim=128):
         """
         Executes LatentSLAM (GSSM) Training.
         """

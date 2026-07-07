@@ -57,7 +57,7 @@ class MarkovLogger:
         self.frame_count = 0
         logging.info(f"MarkovLogger initialized. Directory: {self.base_dir}")
 
-    def log_step(self, frame, ir_raw, batt_raw, ping_raw, motor_str, active_controller="unknown", webcam_frame=None):
+    def log_step(self, frame, ir_raw, batt_raw, ping_raw, motor_str, active_controller="unknown", webcam_frame=None, action_id=None):
         """
         Called EXACTLY once per bout (when STOP transitions to MOVE).
         Sends data to the background thread.
@@ -87,7 +87,8 @@ class MarkovLogger:
             'ping_raw': ping_raw,
             'pwm_left': pwm_l,
             'pwm_right': pwm_r,
-            'active_controller': active_controller
+            'active_controller': active_controller,
+            'action_id': action_id if action_id is not None else ""
         }
         
         self.write_queue.put((frame, filename, row, webcam_frame, webcam_filename))
@@ -113,7 +114,7 @@ class MarkovLogger:
     def _writer_loop(self):
         # Open CSV in append mode
         with open(self.csv_path, 'a', newline='') as f:
-            fieldnames = ['timestamp', 'image_file', 'ir_reading', 'batt_raw', 'ping_raw', 'pwm_left', 'pwm_right', 'active_controller']
+            fieldnames = ['timestamp', 'image_file', 'ir_reading', 'batt_raw', 'ping_raw', 'pwm_left', 'pwm_right', 'active_controller', 'action_id']
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             
             if not self.file_exists:

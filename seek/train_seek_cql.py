@@ -95,7 +95,7 @@ def main():
         batch_size=128,
         learning_rate=5e-5,
         alpha=0.1,
-        model_size='medium',
+        model_size='large',
         dataset_percent=100,
         goal_type=f'{goal_subdir}_seek',
         model_filename=new_model_name,

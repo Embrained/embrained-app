@@ -212,7 +212,7 @@ class SpatialCQLDataset(Dataset):
                                     ).item()
                                 # Continuous reward: map [0,1] -> [-1, +1]
                                 next_node['classifier_reward'] = (p - 0.5) * 2.0
-                                next_node['classifier_done'] = p > 0.85
+                                next_node['classifier_done'] = p > 0.90
                                 next_node['classifier_prob'] = p
                             else:
                                 next_node['classifier_reward'] = -0.5

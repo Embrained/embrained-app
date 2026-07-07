@@ -42,7 +42,7 @@ def kl_div_loss(mu, logvar, beta=1.0):
     kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1).mean()
     return beta * kld, kld
 
-def train(data_root, num_epochs=100, stop_event=None, progress_callback=None, batch_size=64, learning_rate=1e-4, beta=2.0, transition_loss_weight=1.0, contrastive_weight=0.0, architecture='continuous', model_size='small', dataset_dirs=None, model_filename=None, image_size=64, num_layers=4, latent_dim=128, num_actions=3):
+def train(data_root, num_epochs=100, stop_event=None, progress_callback=None, batch_size=64, learning_rate=1e-4, beta=2.0, transition_loss_weight=1.0, contrastive_weight=0.0, architecture='continuous', model_size='large', dataset_dirs=None, model_filename=None, image_size=64, num_layers=4, latent_dim=128, num_actions=3):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Training LatentSLAM on device: {device}")
     

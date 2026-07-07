@@ -409,7 +409,7 @@ def main():
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
     parser.add_argument("--latent_dim", type=int, default=32, help="Embedding dimension")
     parser.add_argument("--temperature", type=float, default=0.07, help="InfoNCE temperature")
-    parser.add_argument("--model_size", type=str, default='medium', help="Encoder size")
+    parser.add_argument("--model_size", type=str, default='large', help="Encoder size")
     parser.add_argument("--data_dir", type=str, default=None, help="Data directory override")
     args = parser.parse_args()
     

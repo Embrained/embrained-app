@@ -33,7 +33,7 @@ def main():
     
     # 2. Trigger the processing pipeline
     # We pass the explicit list of names so it pools them all together
-    result = pipeline.process_datasets(dataset_names, extract_goals=True, extract_telemetry=True)
+    result = pipeline.process_datasets(dataset_names, extract_goals=True, extract_telemetry=False)
     
     if result.get("status") == "success":
         logger.info("\n" + "="*50)
