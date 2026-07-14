@@ -401,7 +401,9 @@ const LiveMode = ({ data, connected, sendMessage }) => {
                                 <div className="flex items-center gap-3 ml-auto shrink-0">
                                     {/* [NEW] Stop Threshold Dropdown */}
                                     {(data.controller && data.controller !== "N/A") && (() => {
-                                        const thresholds = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5];
+                                        const thresholds = [
+                                            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5
+                                        ];
                                         
                                         const currentVal = data.latent_thresh !== undefined && data.latent_thresh !== null ? data.latent_thresh : 0.80;
                                         

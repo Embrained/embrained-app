@@ -1,34 +1,10 @@
-========================================================================
-EMBRAINED, LLC — SCOPE OF APPLICATION & LICENSING BIFURCATION NOTICE
-========================================================================
+Embrained, LLC — Software License
 
-NOTICE: This repository operates under a dual legal framework. 
+The source code in this repository is licensed under the GNU General
+Public License v3.0 (GPLv3), printed in full below.
 
-1. SOFTWARE CODEBASE (GPLv3):
-The GNU General Public License version 3.0 (printed below) applies 
-strictly and exclusively to the software source code contained within 
-this repository. This includes all Python backend modules, frontend React 
-codebases, local automation scripts (.bat/.sh), and bare-metal ESP32-S3 
-firmware components.
-
-2. NEURAL MODEL WEIGHTS & PARAMETERS (EXCLUDED):
-This License (GPLv3) DOES NOT apply to any pre-trained neural network weights, 
-floating-point parameter matrices, binary artifacts (.safetensors, .bin, 
-.pth), VQ-VAE codebook boundaries, or policy checkpoints distributed alongside 
-or aggregated into a global "Model Soup" by this software suite. 
-
-Locally generated model weights trained exclusively on a user's private data 
-using this software are the exclusive intellectual property of the user and are 
-NOT subject to any restrictions by Embrained, LLC.
-
-Pre-trained weights and globally aggregated neural parameters are explicitly 
-excluded from the GPLv3 definition of "The Program" or "Corresponding Source." 
-These specific neural assets are proprietary property of Embrained, LLC and are 
-governed strictly by the separate EMBRAINED OPEN-WEIGHTS END USER LICENSE 
-AGREEMENT (EULA) located in the accompanying 'LEGAL_AND_SAFETY.txt' file.
-
-By propagating, modifying, or running the software source code below, you 
-explicitly acknowledge and agree to this operational split.
+Pre-trained model weights distributed by Embrained are licensed under
+the Apache License 2.0. See LEGAL_AND_SAFETY.txt for details.
 
 ========================================================================
 

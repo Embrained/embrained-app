@@ -5,93 +5,44 @@ EMBRAINED, LLC — LEGAL AND SAFETY INFORMATION
 This document accompanies the Embrained open-source software repository
 and is referenced by the LICENSE file. It contains two sections:
 
-  1. The Embrained Open-Weights End User License Agreement (EULA)
+  1. Model Weights License
   2. Physical Safety & Battery Handling Guidelines
 
 ========================================================================
-SECTION 1: EMBRAINED OPEN-WEIGHTS END USER LICENSE AGREEMENT (EULA)
+SECTION 1: MODEL WEIGHTS LICENSE
 ========================================================================
 
-Effective Date: May 17, 2026
+The Embrained open-source software (Cognitive Engine desktop application,
+PyTorch training pipelines, and monitoring dashboard) is licensed under
+the GNU General Public License v3 (GPLv3). See the LICENSE file in this
+repository for the full GPLv3 text.
 
-This End User License Agreement ("EULA") is a legal agreement between
-you (either an individual or a single entity) and Embrained, LLC
-("Embrained") regarding the proprietary neural network model weights,
-parameters, and associated architectures provided by Embrained.
+Pre-trained model weights distributed by Embrained — including neural
+network parameter files (.safetensors, .bin, .pth), encoder checkpoints,
+and policy checkpoints — are licensed under the Apache License,
+Version 2.0 (the "License"). You may obtain a copy of the License at:
 
-1. Scope of the License
+    https://www.apache.org/licenses/LICENSE-2.0
 
-This EULA governs the use of pre-trained neural network mathematical
-constants, floating-point parameter matrices (e.g., .safetensors, .bin,
-.pth files), VQ-VAE codebook boundaries, and federated policy
-checkpoints that are:
+Unless required by applicable law or agreed to in writing, model weights
+distributed under the License are distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
-  (a) Distributed directly by Embrained, LLC.
-  (b) Aggregated into the global "Model Soup" within the Embrained
-      ecosystem.
+------------------------------------------------------------------------
+A Note on User-Trained Models
+------------------------------------------------------------------------
 
-Exemptions (User IP):
-This EULA does not apply to models trained completely from scratch
-(i.e., from random initialization) by a user exclusively on their own
-private data using the open-source Embrained software suite. Locally
-generated models trained in this manner are the exclusive intellectual
-property of the user and are not subject to the restrictions in this
-EULA.
+Models trained entirely from scratch by a user on their own data using
+the open-source Embrained software are the exclusive intellectual
+property of the user. You may use, distribute, or deploy them however
+you wish, without restriction. You are not required to share your
+locally trained models with anyone, including Embrained.
 
-2. Permitted Use
-
-Subject to the terms and conditions of this EULA, Embrained grants you
-a non-exclusive, revocable, royalty-free license to download, run,
-evaluate, and fine-tune the distributed model weights locally for:
-
-  - Personal use and experimentation.
-  - Non-commercial and academic research objectives.
-
-3. Commercial Restrictions
-
-You may not use the model weights or any derivative works for any
-commercial purposes without an explicit, executed commercial licensing
-agreement with Embrained, LLC. Prohibited commercial activities include,
-but are not limited to:
-
-  - Commercial redistribution or sublicensing of the weights.
-  - Enterprise hosting, API provisioning, or cloud deployment of the
-    models as a service.
-  - Utilizing the weights to bootstrap, distill, or train competing
-    robotic navigation architectures or commercial foundation models.
-
-4. Derivative Works
-
-If you fine-tune, modify, adapt, distill, or otherwise alter the
-pre-trained model weights distributed by Embrained, the resulting model
-is legally considered a Derivative Work.
-
-The terms, conditions, and commercial restrictions of this EULA
-(including Section 3) apply entirely and strictly to any and all
-Derivative Works. While you retain ownership of the specific
-modifications you make, you may not commercially use, deploy, or
-distribute the Derivative Work without a commercial license from
-Embrained, LLC.
-
-5. Hardware Co-Dependency & Network Integrity
-
-The pre-trained neural models and visual perception manifolds distributed
-by Embrained are structurally optimized for the physical embodiment parameters
-of the Plexus robot. Users are fully permitted and encouraged to run, modify,
-and experiment with any custom or hardware-agnostic models they wish on the
-Plexus platform. However, the pre-trained models provided directly by Embrained
-remain subject to the non-commercial restrictions outlined in Section 3.
-
-6. Termination
-
-This license is effective until terminated. Your rights under this EULA
-will terminate automatically without notice from Embrained if you fail
-to comply with any of its terms. Upon termination, you must cease all
-use of the model weights and destroy all copies, full or partial,
-including any Derivative Works.
-
-By downloading, accessing, or using the Embrained model weights, you
-agree to be bound by the terms of this EULA.
+This is fundamental to our mission: Embrained exists to give researchers
+and developers the tools to train their own visual navigation models.
+Your data, your training, your models.
 
 
 ========================================================================
@@ -154,7 +105,7 @@ CONTACT INFORMATION
 ========================================================================
 
 Embrained, LLC
-Contact (IRO / Legal): chris@embrained.ai
+Contact: chris@embrained.ai
 
-For licensing inquiries: https://embrained.com
+Website: https://embrained.com
 Community: https://discord.com/channels/1487132795833684228/1487132796920004640

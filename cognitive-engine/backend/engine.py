@@ -1199,18 +1199,15 @@ class CognitiveEngine:
         # Dwell stop logic removed
         
         if reflex_triggered:
-            self.cql_controller.state = 'WAITING'
-            self.cql_controller.state_start_time = 0
-            self.cql_controller.current_action_id = 0
-            target_action = 0
-        else:
-            effective_sonar = curr_sonar if self.reflex_enabled else 0.0
-            if self.active_model_name and ('fixed_goal' in self.active_model_name or 'discrete_cql' in self.active_model_name):
-                effective_sonar = curr_sonar
-                
-            # Safety reflex override for Dwell removed
-                
-            target_action = self.cql_controller.get_action(effective_sonar, teleop_action=action)
+            action = 5
+            
+        effective_sonar = curr_sonar if self.reflex_enabled else 0.0
+        if self.active_model_name and ('fixed_goal' in self.active_model_name or 'discrete_cql' in self.active_model_name):
+            effective_sonar = curr_sonar
+            
+        # Safety reflex override for Dwell removed
+            
+        target_action = self.cql_controller.get_action(effective_sonar, teleop_action=action)
         
         new_state = getattr(self.cql_controller, 'state', None)
         if new_state == 'MOVE' and prev_state in ['STOP', 'WAITING']:
@@ -1577,6 +1574,17 @@ class CognitiveEngine:
                          if self.use_webcam and self.comms and hasattr(self.comms, 'get_latest_webcam_frame'):
                              webcam_frame = self.comms.get_latest_webcam_frame()
                              
+                         # [NEW] Compute semantic action for correct logging
+                         semantic_action = kwargs.get('semantic_action', target_action)
+                         if isinstance(semantic_action, tuple):
+                             current_algo = getattr(self.explorer, 'current_algo', None) if getattr(self, 'explorer', None) else None
+                             if current_algo == "Algorithmic Oracle" and getattr(self.explorer, 'algo_oracle', None) and hasattr(self.explorer.algo_oracle.pacer, 'current_action_id'):
+                                 semantic_action = getattr(self.explorer.algo_oracle.pacer, 'current_action_id', 0)
+                             elif hasattr(self, 'cql_controller') and self.cql_controller and hasattr(self.cql_controller, 'current_action_id'):
+                                 semantic_action = getattr(self.cql_controller, 'current_action_id', 0)
+                             elif hasattr(self, 'explorer') and self.explorer and hasattr(self.explorer, 'current_action_id'):
+                                 semantic_action = getattr(self.explorer, 'current_action_id', 0)
+                             
                          self.logger.log_step(
                              frame=img,
                              ir_raw=self.comms.telemetry.get('dist', '0') if (self.comms and hasattr(self.comms, 'telemetry')) else '0',
@@ -1585,7 +1593,7 @@ class CognitiveEngine:
                              motor_str=explicit_cmd_str,
                              active_controller=kwargs.get('active_controller_str', 'unknown'),
                              webcam_frame=webcam_frame,
-                             action_id=target_action
+                             action_id=semantic_action
                          )
                          
 
@@ -1662,9 +1670,9 @@ class CognitiveEngine:
              else:
                  self.state['goal_image'] = None
                  
+             # semantic_action is now computed above for logging, but we ensure it's still available here
              semantic_action = kwargs.get('semantic_action', target_action)
              if isinstance(semantic_action, tuple):
-                 # Pluck the current integer action ID out of the active pacer or explorer
                  current_algo = getattr(self.explorer, 'current_algo', None) if getattr(self, 'explorer', None) else None
                  if current_algo == "Algorithmic Oracle" and getattr(self.explorer, 'algo_oracle', None) and hasattr(self.explorer.algo_oracle.pacer, 'current_action_id'):
                      semantic_action = getattr(self.explorer.algo_oracle.pacer, 'current_action_id', 0)
